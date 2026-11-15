@@ -1,0 +1,16 @@
+{
+  "name": "webos-custom-launcher",
+  "version": "1.0.0",
+  "description": "Apple-TV-style home screen for rooted LG webOS TVs (Homebrew Channel)",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "icons": "python tools/make_icons.py",
+    "package": "ares-package app -o dist --no-minify",
+    "manifest": "node tools/gen-manifest.js",
+    "build": "npm run package && npm run manifest"
+  },
+  "devDependencies": {
+    "@webos-tools/cli": "^3.2.0"
+  }
+}

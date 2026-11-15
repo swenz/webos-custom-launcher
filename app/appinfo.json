@@ -1,0 +1,17 @@
+{
+  "id": "io.github.swenz.customlauncher",
+  "version": "1.0.0",
+  "vendor": "Custom Launcher",
+  "type": "web",
+  "main": "index.html",
+  "title": "Custom Launcher",
+  "appDescription": "Apple-TV-style home screen for rooted LG webOS TVs",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgColor": "#111114",
+  "iconColor": "#1c1c21",
+  "splashBackground": "splash.png",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "uiRevision": 2
+}

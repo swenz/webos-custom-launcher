@@ -1,0 +1,220 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: #000;
+  overflow: hidden;
+  font-family: "LG Smart UI", "SF Pro Display", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  color: #fff;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/* Fixed 1920x1080 design canvas; scaled by JS on other resolutions. */
+#stage {
+  position: absolute; left: 0; top: 0;
+  width: 1920px; height: 1080px;
+  overflow: hidden;
+  transform-origin: 0 0;
+}
+
+#bg {
+  position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+  background:
+    radial-gradient(1400px 800px at 50% -10%, #2b2c36 0%, rgba(22, 22, 28, 0) 70%),
+    linear-gradient(180deg, #17171c 0%, #0b0b0e 100%);
+}
+
+/* Ambient glow that takes the colour of the focused tile (two layers cross-fade). */
+.ambient {
+  position: absolute; left: -10%; top: -45%;
+  width: 120%; height: 110%;
+  border-radius: 50%;
+  opacity: 0;
+  filter: none;
+  background: #333;
+  -webkit-mask-image: radial-gradient(closest-side, rgba(0,0,0,.9), rgba(0,0,0,0));
+  mask-image: radial-gradient(closest-side, rgba(0,0,0,.9), rgba(0,0,0,0));
+  transition: opacity 900ms ease;
+  will-change: opacity;
+}
+.ambient.on { opacity: .34; }
+
+/* ---------- header ---------- */
+#top {
+  position: absolute; left: 0; right: 0; top: 0; height: 130px;
+  padding: 44px 100px 0;
+  z-index: 5;
+  pointer-events: none;
+}
+#clock { float: right; text-align: right; }
+#time { display: block; font-size: 44px; font-weight: 600; letter-spacing: .5px; }
+#date { display: block; margin-top: 2px; font-size: 22px; color: rgba(255,255,255,.55); }
+
+/* ---------- rows ---------- */
+#viewport { position: absolute; left: 0; right: 0; top: 0; bottom: 0; }
+
+#rows {
+  position: absolute; left: 0; right: 0; top: 118px;
+  transition: transform 520ms cubic-bezier(.22, .8, .24, 1);
+  will-change: transform;
+}
+
+.row { position: relative; height: 304px; }
+
+.row h3 {
+  height: 62px; padding: 14px 100px 0;
+  font-size: 27px; font-weight: 600;
+  color: rgba(255,255,255,.62);
+  transition: color 300ms ease;
+}
+.row.active h3 { color: rgba(255,255,255,.96); }
+
+.track {
+  position: absolute; left: 0; top: 62px;
+  height: 242px;
+  padding-left: 100px;
+  white-space: nowrap;
+  transition: transform 480ms cubic-bezier(.22, .8, .24, 1);
+  will-change: transform;
+}
+
+/* ---------- tile ---------- */
+.tile {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+  width: 304px; height: 242px;
+  margin-right: 36px;
+  padding-top: 14px;
+  -webkit-perspective: 900px; perspective: 900px;
+}
+
+.card {
+  position: relative;
+  width: 304px; height: 171px;
+  border-radius: 24px;
+  overflow: hidden;
+  background: #2a2a30;
+  box-shadow: 0 10px 22px rgba(0,0,0,.38);
+  transform: translateZ(0) scale(1);
+  transition:
+    transform 340ms cubic-bezier(.2, .85, .25, 1.12),
+    box-shadow 340ms ease;
+  will-change: transform;
+}
+
+.card .fill {
+  position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(160deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,0) 45%, rgba(0,0,0,.26) 100%);
+}
+
+.card .art {
+  position: absolute; left: -12px; top: -12px; right: -12px; bottom: -12px;
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  transition: transform 340ms cubic-bezier(.2, .85, .25, 1);
+  will-change: transform;
+}
+.card .art img { width: 124px; height: 124px; object-fit: contain; }
+.card .art .letter { font-size: 84px; font-weight: 700; color: rgba(255,255,255,.9); }
+.card .art svg { width: 92px; height: 92px; }
+.card .art .port {
+  margin-top: 8px; font-size: 25px; font-weight: 700; letter-spacing: 1px;
+  color: rgba(255,255,255,.95);
+}
+.tile.unplugged .art { opacity: .5; }
+
+/* specular highlight that slides with the tilt */
+.card .shine {
+  position: absolute; left: -30%; top: -60%;
+  width: 160%; height: 160%;
+  background: radial-gradient(closest-side, rgba(255,255,255,.34), rgba(255,255,255,0));
+  opacity: 0;
+  transition: opacity 340ms ease, transform 340ms cubic-bezier(.2, .85, .25, 1);
+  pointer-events: none;
+}
+
+.label {
+  margin-top: 30px;
+  height: 30px; line-height: 30px;
+  text-align: center;
+  font-size: 24px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 260ms ease, transform 340ms cubic-bezier(.2, .85, .25, 1);
+}
+
+/* focus state: lift, tilt (parallax) and deep shadow */
+.tile.focus { z-index: 3; }
+.tile.focus .card {
+  transform: translateZ(0) scale(1.17) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  box-shadow: 0 44px 70px rgba(0,0,0,.62), 0 14px 24px rgba(0,0,0,.36);
+}
+.tile.focus .art { transform: translate(var(--px, 0px), var(--py, 0px)) scale(1.05); }
+.tile.focus .shine { opacity: 1; transform: translate(var(--sx, 0px), var(--sy, 0px)); }
+.tile.focus .label { opacity: 1; transform: translateY(0); }
+
+/* pointer tilt follows the cursor without lag */
+.tile.focus.live .card,
+.tile.focus.live .art,
+.tile.focus.live .shine { transition-duration: 90ms; transition-timing-function: linear; }
+
+.tile.pressed .card {
+  transform: translateZ(0) scale(1.06);
+  transition-duration: 120ms;
+  box-shadow: 0 16px 30px rgba(0,0,0,.5);
+}
+
+/* launch: everything recedes */
+#stage.launching #rows, #stage.launching #top { opacity: .0; transition: opacity 420ms ease 120ms, transform 520ms; }
+#rows, #top { opacity: 1; }
+#stage.entering #rows { opacity: 0; transform: translateY(40px) !important; transition: none; }
+
+/* ---------- toast ---------- */
+#toast {
+  position: absolute; left: 50%; bottom: 60px;
+  max-width: 1200px; padding: 16px 34px;
+  border-radius: 40px;
+  background: rgba(40,40,46,.94);
+  font-size: 24px;
+  transform: translate(-50%, 40px); opacity: 0;
+  transition: opacity 300ms ease, transform 300ms ease;
+  z-index: 30;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- settings ---------- */
+#settings {
+  position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,.62);
+  z-index: 20;
+  opacity: 1;
+  transition: opacity 260ms ease;
+}
+#settings.hidden { opacity: 0; pointer-events: none; }
+#settings .panel {
+  position: absolute; left: 50%; top: 50%;
+  width: 980px; margin-left: -490px;
+  transform: translateY(-50%) scale(1);
+  padding: 46px 50px 36px;
+  border-radius: 36px;
+  background: rgba(36,36,42,.98);
+  box-shadow: 0 50px 120px rgba(0,0,0,.7);
+  transition: transform 300ms cubic-bezier(.2, .85, .25, 1);
+}
+#settings.hidden .panel { transform: translateY(-50%) scale(.94); }
+#settings h2 { font-size: 38px; font-weight: 700; margin-bottom: 26px; }
+.opt {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 86px; padding: 14px 30px; margin: 10px 0;
+  border-radius: 20px;
+  background: rgba(255,255,255,.07);
+  font-size: 27px;
+  transition: transform 220ms cubic-bezier(.2, .85, .25, 1), background 220ms ease, color 220ms ease;
+}
+.opt small { display: block; margin-top: 4px; font-size: 20px; opacity: .6; }
+.opt .val { font-weight: 700; margin-left: 30px; white-space: nowrap; }
+.opt.focus { background: #f2f2f4; color: #111; transform: scale(1.035); box-shadow: 0 18px 40px rgba(0,0,0,.45); }
+#settingsHint { margin-top: 22px; font-size: 20px; color: rgba(255,255,255,.5); text-align: center; }
