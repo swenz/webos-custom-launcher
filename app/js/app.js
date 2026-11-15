@@ -11,7 +11,7 @@
   // layout on the 1920x1080 canvas (proportions taken from the tvOS home screen)
   var COLS = 6, TILE_W = 252, TILE_H = 151, PITCH_X = 298, PITCH_Y = 262, MARGIN_X = 89;
   var SHELF_Y = 745;      // grid top while the dock (first row) is focused
-  var GRID_Y = 190;       // grid top once you move below the dock (leaves room for the status bar)
+  var GRID_Y = 190;       // grid top once you move below the dock (leaves room for the clock)
   var HOLD_MS = 550;      // long press on OK starts moving a tile
 
   var lang = (navigator.language || 'en').slice(0, 2) === 'de' ? 'de' : 'en';
@@ -25,9 +25,9 @@
       resetOrder: 'Sortierung zurücksetzen', resetOrderDesc: 'Standard-Reihenfolge wiederherstellen', reset: 'Zurücksetzen',
       hint: 'OK = umschalten   ·   Zurück = schließen',
       moveHint: 'Pfeiltasten: verschieben   ·   OK: fertig',
-      ccPower: 'Ausschalten', ccNet: 'Netzwerk', ccWifi: 'WLAN', ccLan: 'LAN', ccOffline: 'Nicht verbunden',
+      ccPower: 'Ausschalten', ccWifi: 'WLAN', ccLan: 'LAN', ccOffline: 'Nicht verbunden',
       ccScreen: 'Bildschirm', ccScreenSub: 'ausschalten', ccSettings: 'TV-Einstellungen', ccDashboard: 'Home Dashboard', ccReboot: 'Neustart', ccSound: 'Ton an', ccMuted: 'Stumm', ccVolume: 'Stufe ',
-      ccSleep: 'Sleep-Timer', ccMin: ' Min.', ccScreenHint: 'Beliebige Taste schaltet den Bildschirm wieder ein',
+      ccSleep: 'Sleep-Timer', ccMin: ' Min.',
       launchFail: 'Start fehlgeschlagen: ', needRoot: 'Homebrew-Channel-Dienst nicht erreichbar (Root nötig)',
       listFail: 'App-Liste konnte nicht geladen werden'
     },
@@ -40,9 +40,9 @@
       resetOrder: 'Reset order', resetOrderDesc: 'Restore the default arrangement', reset: 'Reset',
       hint: 'OK = toggle   ·   Back = close',
       moveHint: 'Arrow keys: move   ·   OK: done',
-      ccPower: 'Power Off', ccNet: 'Network', ccWifi: 'Wi-Fi', ccLan: 'LAN', ccOffline: 'Not connected',
+      ccPower: 'Power Off', ccWifi: 'Wi-Fi', ccLan: 'LAN', ccOffline: 'Not connected',
       ccScreen: 'Screen', ccScreenSub: 'turn off', ccSettings: 'TV settings', ccDashboard: 'Home Dashboard', ccReboot: 'Restart', ccSound: 'Sound on', ccMuted: 'Muted', ccVolume: 'Level ',
-      ccSleep: 'Sleep Timer', ccMin: ' min', ccScreenHint: 'Press any key to turn the screen back on',
+      ccSleep: 'Sleep Timer', ccMin: ' min',
       launchFail: 'Launch failed: ', needRoot: 'Homebrew Channel service not reachable (root required)',
       listFail: 'Could not load the app list'
     }
@@ -68,7 +68,7 @@
   var prefs = store.get('prefs', { showSystem: true });
   var items = [];           // ordered tiles: [{key, kind, id, title, icon, color, el, ...}]
   var focus = -1;           // index into items
-  var mode = 'home';        // home | move | settings
+  var mode = 'home';        // home | move | settings | cc
   var dataSig = '';
 
   /* ------------------------------------------------------------------ data */
@@ -379,6 +379,8 @@
     items.forEach(function (it, i) { if (it.key === prevKey) { idx = i; } });
     focus = -1;
     setFocus(idx, { instant: true });
+    // the control center owns the highlight while it is open (closeCC restores it)
+    if (mode === 'cc' && items[focus]) { items[focus].el.classList.remove('focus'); }
   }
 
   /* ----------------------------------------------------------------- focus */
@@ -531,7 +533,10 @@
     tile.classList.add('pressed');
     setTimeout(function () { tile.classList.remove('pressed'); }, 160);
 
-    if (item.kind === 'settings') { setTimeout(openSettings, 120); return; }
+    if (item.kind === 'settings') {
+      setTimeout(function () { if (mode === 'home') { openSettings(); } }, 120);
+      return;
+    }
     if (!Luna.available) { toast('launch ' + item.id); return; }
 
     stage.classList.add('launching');
@@ -1011,6 +1016,7 @@
   function refresh() {
     if (mode === 'move') { return Promise.resolve(); }
     return loadData().then(function (data) {
+      if (mode === 'move') { return; }   // picked up meanwhile: the next refresh catches up
       store.set('data', data);
       var sig = JSON.stringify(data) + '|' + prefs.showSystem;
       if (sig === dataSig) {
