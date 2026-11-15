@@ -6,6 +6,13 @@
   var Bridge = global.WebOSServiceBridge || global.PalmServiceBridge;
   var HB_EXEC = 'luna://org.webosbrew.hbchannel.service/exec';
 
+  /* Parse a service reply; a reply with returnValue === false becomes an Error. */
+  function parseReply(json) {
+    var res = JSON.parse(json);
+    if (res && res.returnValue === false) { throw new Error(res.errorText || 'luna error'); }
+    return res;
+  }
+
   function call(uri, params, timeoutMs) {
     return new Promise(function (resolve, reject) {
       if (!Bridge) { reject(new Error('no-bridge')); return; }
@@ -21,15 +28,7 @@
         if (done) { return; }
         done = true;
         clearTimeout(timer);
-        var res;
-        try { res = JSON.parse(msg); } catch (e) { reject(e); return; }
-        if (res && res.returnValue === false) {
-          var err = new Error(res.errorText || 'luna error');
-          err.response = res;
-          reject(err);
-        } else {
-          resolve(res);
-        }
+        try { resolve(parseReply(msg)); } catch (e) { reject(e); }
       };
       bridge.call(uri, JSON.stringify(params || {}));
     });
@@ -43,7 +42,7 @@
   var execChain = Promise.resolve();
   function exec(command, timeoutMs) {
     var run = function () { return call(HB_EXEC, { command: command }, timeoutMs || 15000); };
-    var p = execChain.then(run, run);
+    var p = execChain.then(run);   // execChain never rejects
     execChain = p.catch(function () {});
     return p;
   }
@@ -51,15 +50,7 @@
   /* luna-send as root, for APIs that are not exposed to third-party apps. */
   function rootCall(uri, params) {
     var cmd = 'luna-send -n 1 -f ' + shQuote(uri) + ' ' + shQuote(JSON.stringify(params || {}));
-    return exec(cmd).then(function (r) {
-      var res = JSON.parse(r.stdoutString);
-      if (res && res.returnValue === false) {
-        var err = new Error(res.errorText || 'luna error');
-        err.response = res;
-        throw err;
-      }
-      return res;
-    });
+    return exec(cmd).then(function (r) { return parseReply(r.stdoutString); });
   }
 
   /* Try the app's own bus permissions, then the root route. */
@@ -69,9 +60,7 @@
 
   global.Luna = {
     available: !!Bridge,
-    call: call,
     exec: exec,
-    rootCall: rootCall,
     smartCall: smartCall,
     shQuote: shQuote
   };
