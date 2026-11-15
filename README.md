@@ -1,116 +1,123 @@
-# Custom Launcher für webOS
+# Custom Launcher for webOS
 
-Ein eigener Startbildschirm im Stil von tvOS für **gerootete LG-webOS-TVs** mit [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel). Er ersetzt auf Wunsch das LG-Home: Die Home-Taste öffnet dann diesen Launcher.
+A tvOS-style home screen for **rooted LG webOS TVs** with the [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel). It can replace LG Home, so the Home button on the remote opens this launcher.
 
-*A tvOS-style home screen for rooted LG webOS TVs: app grid with a dock, focus zoom with parallax tilt, re-orderable tiles, D-pad and Magic Remote navigation. It can replace LG Home so the Home button opens the launcher.*
+![Dock on the wallpaper](docs/screenshot.jpg)
 
-![Dock und Statusleiste](docs/screenshot.jpg)
+| App grid | Control center |
+| --- | --- |
+| ![App grid](docs/screenshot-grid.jpg) | ![Control center](docs/screenshot-control-center.jpg) |
 
-![Raster](docs/screenshot-grid.jpg)
+## Features
 
-## Funktionen
+- **One grid, no categories**: six columns, as on tvOS. The first row is the dock and sits at the bottom of the screen over the wallpaper; moving down slides the grid up.
+- **Everything in the same grid**: installed apps (from `luna://com.webos.applicationManager/listLaunchPoints`, with their original icons), Live TV, HDMI 1–4 (names and plug state come from the TV) and the system apps.
+- **Re-orderable**: hold OK until the tile wiggles, move it with the arrow keys, press OK to drop it. The first six tiles form the dock. The order is saved.
+- **Focus effect**: the tile grows, tilts in the direction of travel (with the Magic Remote it follows the pointer) and gets a highlight and a deep shadow; the background takes on the colour of the focused tile.
+- **Wallpaper from the app**: if the focused app ships its own background image (`bgImage`, e.g. Netflix, Disney+), it fills the screen, similar to the tvOS top shelf. Apps do not expose what is currently playing, so the image they ship is all there is.
+- **Control center**: press Up from the dock. A panel of glass tiles unfolds below the clock: power off, network, sound on/mute, screen off, sleep timer, launcher settings, TV settings, Home Dashboard and restart. Down or Back closes it.
+- **Replace LG Home**: the Home button opens the launcher instead of the LG home screen, from any app.
+- **Input**: arrow keys, OK, Back, Home; Magic Remote pointer, click, long click and wheel.
+- No build step: plain HTML/CSS/JS, the IPK is about 35 kB.
 
-- **Ein Raster, keine Kategorien**: sechs Spalten wie bei tvOS. Die erste Reihe ist das Dock und steht unten vor dem Hintergrund; geht man nach unten, schiebt sich das Raster nach oben.
-- **Alles im selben Raster**: installierte Apps (aus `luna://com.webos.applicationManager/listLaunchPoints`, mit Original-Icons), Live TV, HDMI 1–4 (Namen und Anschluss-Status kommen vom TV) und die System-Apps.
-- **Sortierbar**: OK gedrückt halten, bis die Kachel wackelt, mit den Pfeiltasten verschieben, OK zum Ablegen. Die ersten sechs Kacheln bilden das Dock. Die Reihenfolge bleibt gespeichert.
-- **Fokus-Effekt**: Kachel skaliert, kippt beim Navigieren in Bewegungsrichtung (mit der Magic Remote folgt sie dem Zeiger), Glanzlicht und tiefer Schatten; der Hintergrund nimmt die Farbe der fokussierten Kachel an.
-- **Hintergrund passend zur App**: Liefert die fokussierte App ein eigenes Hintergrundbild mit (`bgImage`, z. B. Netflix, Disney+, WOW), füllt es den Bildschirm – ähnlich dem Top Shelf von tvOS. Was in der App gerade läuft, geben die Apps nicht preis; mehr als ihr mitgeliefertes Bild ist deshalb nicht möglich.
-- **Statusleiste** oben rechts, immer sichtbar: Netzwerk, Ton an/stumm, Sleep-Timer, Bildschirm aus, TV-Einstellungen, Ausschalten und die Uhrzeit. Vom Dock aus mit „hoch“ erreichbar, mit „runter“ oder Zurück geht es zurück.
-- **LG Home ersetzen**: Die Home-Taste öffnet den Launcher statt des LG-Startbildschirms, auch aus anderen Apps heraus.
-- **Bedienung**: Pfeiltasten, OK, Zurück, Home; Magic Remote mit Zeiger, Klick, langem Klick und Scrollrad.
-- Kein Build-Schritt: reines HTML/CSS/JS, IPK ca. 30 kB.
+## Requirements
 
-## Voraussetzungen
-
-- LG-TV mit webOS, **gerootet**, Homebrew Channel installiert (getestet auf webOS 6.5.3).
-- Der Root-Zugriff wird gebraucht, weil Drittanbieter-Apps weder die App-Liste noch fremde Icons lesen dürfen. Der Launcher nutzt dafür den Dienst `org.webosbrew.hbchannel.service/exec` des Homebrew Channel.
+- An LG TV running webOS, **rooted**, with the Homebrew Channel installed (tested on webOS 6.5.3).
+- Root is needed because third-party apps may neither read the app list nor other apps' icons. The launcher uses the Homebrew Channel service `org.webosbrew.hbchannel.service/exec` for that.
 
 ## Installation
 
-IPK aus den [Releases](https://github.com/swenz/webos-custom-launcher/releases) laden: `io.github.swenz.customlauncher_1.2.0_all.ipk`.
+Download the IPK from the [releases](https://github.com/swenz/webos-custom-launcher/releases): `io.github.swenz.customlauncher_1.3.0_all.ipk`.
 
-**Variante A – webOS Dev Manager** ([Download](https://github.com/webosbrew/dev-manager-desktop)): TV verbinden, *Apps → Install* und die IPK auswählen.
+**Option A – webOS Dev Manager** ([download](https://github.com/webosbrew/dev-manager-desktop)): connect the TV, choose *Apps → Install* and pick the IPK.
 
-**Variante B – webOS CLI** (`npm i -g @webos-tools/cli`, TV einmalig mit `ares-setup-device` einrichten):
+**Option B – webOS CLI** (`npm i -g @webos-tools/cli`, set the TV up once with `ares-setup-device`):
 
 ```bash
-ares-install -d <gerät> io.github.swenz.customlauncher_1.2.0_all.ipk
+ares-install -d <device> io.github.swenz.customlauncher_1.3.0_all.ipk
 ```
 
-**Variante C – direkt auf dem TV** (SSH oder Telnet als root):
+**Option C – on the TV itself** (SSH or telnet as root):
 
 ```bash
-cd /tmp && wget -O cl.ipk https://github.com/swenz/webos-custom-launcher/releases/download/v1.2.0/io.github.swenz.customlauncher_1.2.0_all.ipk
+cd /tmp && wget -O cl.ipk https://github.com/swenz/webos-custom-launcher/releases/download/v1.3.0/io.github.swenz.customlauncher_1.3.0_all.ipk
 luna-send -i -f luna://com.webos.appInstallService/dev/install '{"id":"io.github.swenz.customlauncher","ipkUrl":"/tmp/cl.ipk","subscribe":true}'
 ```
 
-(Mit Strg+C beenden, sobald `"state": "installed"` erscheint.)
+(Stop it with Ctrl+C once `"state": "installed"` appears.)
 
-## Einrichten: Home-Taste und Start beim Einschalten
+## Setup: Home button and opening at power-on
 
-Launcher öffnen und die Kachel **Launcher-Einstellungen** wählen (letzte Kachel im Raster).
+Open the launcher and choose **Launcher Settings** (the last tile in the grid, or the gear in the control center).
 
-| Option | Wirkung |
+| Option | Effect |
 | --- | --- |
-| **LG Home ersetzen** | Home-Taste öffnet den Launcher. Wirkt sofort und nach jedem Neustart. |
-| **Beim Einschalten öffnen** | Schaltet die LG-Option *Home Auto Launch*. Ist sie an, zeigt der TV nach dem Einschalten den Startbildschirm – mit ersetztem LG Home also den Launcher. |
-| **System-Apps anzeigen** | Vorinstallierte LG-Apps im Raster ein- oder ausblenden. |
-| **Sortierung zurücksetzen** | Stellt die Standard-Reihenfolge wieder her. |
+| **Replace LG Home** | The Home button opens the launcher. Takes effect immediately and after every reboot. |
+| **Open at power-on** | Toggles LG's *Home Auto Launch*. When it is on, the TV shows the home screen after power-on – with LG Home replaced, that is the launcher. |
+| **Show system apps** | Shows or hides the preinstalled LG apps in the grid. |
+| **Reset order** | Restores the default arrangement. |
 
-### So funktioniert das Ersetzen
+### How replacing LG Home works
 
-Es gibt genau eine Stelle, an der eingegriffen wird: das Programm des LG-Home, `/usr/bin/com.webos.app.home`. Das System startet es immer dann, wenn der Startbildschirm erscheinen soll – bei der Home-Taste, bei *Home Auto Launch* nach dem Einschalten oder Aufwachen und wenn eine App das Home aufruft.
+There is exactly one place where the launcher hooks in: the LG Home executable, `/usr/bin/com.webos.app.home`. The system starts it whenever the home screen should appear – on the Home button, on *Home Auto Launch* after power-on or wake-up, and when an app asks for the home screen.
 
-- `boot-hook.sh` wird nach `/var/lib/webosbrew/init.d/50-customlauncher` kopiert. Das Startskript des Homebrew Channel führt diese Datei bei jedem Boot aus.
-- Der Hook legt `home-stub.sh` per Bind-Mount über das LG-Home-Programm. Das kleine Skript meldet sich beim App-Manager wie das echte Home an und öffnet bei jedem Start-Ereignis den Launcher.
-- An der Systempartition wird nichts geändert. Der Mount lebt nur im Arbeitsspeicher; ohne den Hook ist nach einem Neustart alles im Originalzustand.
-- Wird der Launcher deinstalliert, gibt das Skript das LG-Home beim nächsten Druck auf die Home-Taste von selbst wieder frei.
+- `boot-hook.sh` is copied to `/var/lib/webosbrew/init.d/50-customlauncher`. The Homebrew Channel startup script runs that file on every boot.
+- The hook bind-mounts `home-stub.sh` over the LG Home executable. This small script registers with the application manager like the real Home and opens the launcher on every launch event.
+- Nothing on the system partition is modified. The mount only exists in memory; without the hook, a reboot restores the original state.
 
-Von Hand rückgängig machen:
+### Apps added or removed
+
+The list is read again every time the launcher comes to the front and every two minutes while it is showing. New apps appear at the end of the grid, removed apps disappear, and the saved order of all other tiles is kept.
+
+### Uninstalling
+
+Uninstall the app as usual. The stand-in script notices that the launcher is gone, releases the mount and deletes the boot hook and its folder; LG Home works again right away. Nothing is left outside the app's own folder.
+
+To undo the replacement by hand:
 
 ```bash
 /var/lib/webosbrew/init.d/50-customlauncher --stop
 rm -rf /var/lib/webosbrew/init.d/50-customlauncher /var/lib/webosbrew/customlauncher
 ```
 
-## Grenzen
+## Limitations
 
-- Solange „LG Home ersetzen“ an ist, ist der LG-Startbildschirm nicht erreichbar. Zum Zurückholen die Option ausschalten.
-- Getestet auf einem Gerät (webOS 6.5.3). Auf anderen webOS-Versionen kann das LG-Home anders aufgebaut sein; dann die Option ausschalten oder den Hook wie oben entfernen.
-- Der Homebrew-Channel-Dienst verträgt keine parallelen `exec`-Aufrufe. Der Launcher sendet sie deshalb strikt nacheinander.
+- While "Replace LG Home" is on, the LG home screen is not reachable. Turn the option off to get it back.
+- Tested on one device (webOS 6.5.3). LG Home may be built differently on other webOS versions; in that case turn the option off or remove the hook as shown above.
+- The Homebrew Channel service cannot handle parallel `exec` calls, so the launcher sends them strictly one after another.
 
-## Selbst bauen
+## Building
 
 ```bash
 npm i -g @webos-tools/cli
 npm run build
 ```
 
-Das erzeugt `dist/io.github.swenz.customlauncher_<version>_all.ipk` und aktualisiert das Manifest. Die Icons erzeugt `npm run icons` (Python mit Pillow).
+This creates `dist/io.github.swenz.customlauncher_<version>_all.ipk` and updates the manifest. `npm run icons` regenerates the icons (Python with Pillow).
 
-`tools/tvsh.py <tv-ip> '<befehl>'` führt zum Testen einen Befehl über das Root-Telnet des Homebrew Channel aus.
+`tools/tvsh.py <tv-ip> '<command>'` runs a command through the Homebrew Channel's root telnet, for testing.
 
-## webosbrew-Manifest
+## webosbrew manifest
 
 [`io.github.swenz.customlauncher.manifest.json`](io.github.swenz.customlauncher.manifest.json):
 
 ```json
 {
   "id": "io.github.swenz.customlauncher",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "web",
   "title": "Custom Launcher",
   "appDescription": "Apple-TV-style home screen for rooted LG webOS TVs",
   "iconUri": "https://github.com/swenz/webos-custom-launcher/raw/main/app/largeIcon.png",
   "sourceUrl": "https://github.com/swenz/webos-custom-launcher",
   "rootRequired": true,
-  "ipkUrl": "https://github.com/swenz/webos-custom-launcher/releases/download/v1.2.0/io.github.swenz.customlauncher_1.2.0_all.ipk",
+  "ipkUrl": "https://github.com/swenz/webos-custom-launcher/releases/download/v1.3.0/io.github.swenz.customlauncher_1.3.0_all.ipk",
   "ipkHash": {
-    "sha256": "6af48a2fcd2e23cc7d6484b195efc4d985a57dd015fc80bbe21ec2ede4c912e0"
+    "sha256": "091b35c17f0f26a3ce260cfd8e9686fa6fb7b1fc90bbb9f8f7a6fe38e6260847"
   }
 }
 ```
 
-## Lizenz
+## License
 
-[MIT](LICENSE). Kein offizielles Produkt von LG oder Apple; App-Namen und Icons gehören ihren jeweiligen Inhabern.
+[MIT](LICENSE). Not an official product of LG or Apple; app names and icons belong to their respective owners.

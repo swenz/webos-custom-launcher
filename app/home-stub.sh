@@ -14,9 +14,24 @@ launch() {
     luna-send -n 1 -f luna://com.webos.applicationManager/launch "{\"id\":\"$APP_ID\"}" >/dev/null 2>&1
 }
 
-# Launcher was uninstalled: give the real LG Home back.
-if [ ! -d "$APP_DIR" ]; then
-    umount "$REAL" 2>/dev/null
+# Undo everything this launcher set up outside its own folder.
+# "umount -l" because this very script is running from the mount.
+restore_lg_home() {
+    umount -l "$REAL" 2>/dev/null
+    rm -rf /var/lib/webosbrew/init.d/50-customlauncher /var/lib/webosbrew/customlauncher
+}
+
+# True if the launcher was uninstalled. An update replaces the app folder for a
+# moment, so look twice before concluding that.
+app_gone() {
+    [ -d "$APP_DIR" ] && return 1
+    sleep 5
+    [ ! -d "$APP_DIR" ]
+}
+
+# Launcher was uninstalled: clean up and hand over to the real LG Home.
+if app_gone; then
+    restore_lg_home
     exec "$REAL" "$@"
 fi
 
@@ -43,11 +58,11 @@ trap cleanup TERM INT HUP
 while read -r line; do
     case "$line" in
     *'"event":"launch"'* | *'"event":"relaunch"'*)
-        if [ -d "$APP_DIR" ]; then
+        if ! app_gone; then
             launch
         else
-            # uninstalled while running: restore LG Home and show it
-            umount "$REAL" 2>/dev/null
+            # uninstalled while running: clean up, restore LG Home and show it
+            restore_lg_home
             setsid sh -c "sleep 1; luna-send -n 1 luna://com.webos.applicationManager/launch '{\"id\":\"com.webos.app.home\"}'" >/dev/null 2>&1 &
             cleanup
         fi

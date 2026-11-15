@@ -38,12 +38,19 @@ if [ "$1" = "--stop" ]; then
     pkill -f "luna-send -i -a com.webos.app.home" 2>/dev/null
     rm -f /tmp/customlauncher-home.*
     sleep 1
-    while mounted; do umount "$REAL" || break; done
+    while mounted; do umount "$REAL" 2>/dev/null || umount -l "$REAL" || break; done
     exit 0
 fi
 
-# App was uninstalled, or the stub is missing: leave LG Home alone.
-[ -d "$APP_DIR" ] && [ -x "$STUB" ] || exit 0
+# App was uninstalled (its parent folder is there, the app is not): remove the
+# leftovers, including this hook, and leave LG Home alone.
+if [ ! -d "$APP_DIR" ]; then
+    if [ -d "${APP_DIR%/*}" ]; then
+        rm -rf "$CONF" "$0"
+    fi
+    exit 0
+fi
+[ -x "$STUB" ] || exit 0
 
 stop_legacy_watcher
 mounted || mount --bind "$STUB" "$REAL" || exit 0
