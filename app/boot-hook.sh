@@ -15,10 +15,6 @@ CONF="/var/lib/webosbrew/customlauncher"
 STUB="$CONF/home-stub"
 REAL="/usr/bin/com.webos.app.home"
 
-launch() {
-    luna-send -n 1 -f luna://com.webos.applicationManager/launch "{\"id\":\"$APP_ID\"}" >/dev/null 2>&1
-}
-
 mounted() { grep -q " $REAL " /proc/mounts; }
 
 # Watcher process of version 1.0.0, if it is still around.
