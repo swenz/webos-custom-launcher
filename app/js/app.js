@@ -9,7 +9,7 @@
   var HOME_BIN = '/usr/bin/com.webos.app.home';
 
   // layout on the 1920x1080 canvas (proportions taken from the tvOS home screen)
-  var COLS = 6, TILE_W = 252, TILE_H = 151, PITCH_X = 298, PITCH_Y = 262, MARGIN_X = 89;
+  var COLS = 6, TILE_H = 151, PITCH_X = 298, PITCH_Y = 262, MARGIN_X = 89;
   var SHELF_Y = 745;      // grid top while the dock (first row) is focused
   var GRID_Y = 190;       // grid top once you move below the dock (leaves room for the clock)
   var HOLD_MS = 550;      // long press on OK starts moving a tile
@@ -30,14 +30,47 @@
     listFail: 'Could not load the app list'
   };
 
-  var SVG = {
-    hdmi: '<svg viewBox="0 0 96 96" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"><path d="M12 30h72v20l-12 16H24L12 50z"/><path d="M30 44h36"/></svg>',
+  var SVG = {   // keyed by tile kind
+    input: '<svg viewBox="0 0 96 96" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"><path d="M12 30h72v20l-12 16H24L12 50z"/><path d="M30 44h36"/></svg>',
     tv: '<svg viewBox="0 0 96 96" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"><rect x="10" y="20" width="76" height="48" rx="7"/><path d="M34 82h28M48 68v14"/></svg>',
-    gear: '<svg viewBox="0 0 96 96" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"><circle cx="48" cy="48" r="13"/><path d="M48 10v12M48 74v12M10 48h12M74 48h12M21 21l9 9M66 66l9 9M75 21l-9 9M30 66l-9 9"/></svg>'
+    settings: '<svg viewBox="0 0 96 96" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"><circle cx="48" cy="48" r="13"/><path d="M48 10v12M48 74v12M10 48h12M74 48h12M21 21l9 9M66 66l9 9M75 21l-9 9M30 66l-9 9"/></svg>'
   };
 
   var $ = function (id) { return document.getElementById(id); };
   var stage = $('stage'), gridEl = $('grid');
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) { e.className = cls; }
+    if (text !== undefined) { e.textContent = text; }
+    return e;
+  }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function rowOf(i) { return Math.floor(i / COLS); }
+  function hexToInt(hex) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    return m ? parseInt(m[1], 16) : null;
+  }
+  /* Nearest node, starting at the given one, that carries the expando property. */
+  function owner(node, prop) {
+    while (node && node !== document && node[prop] === undefined) { node = node.parentNode; }
+    return node === document ? null : node;
+  }
+  /* Two stacked layers that cross-fade: a CSS image fades in on the idle layer, null fades both out. */
+  function crossfader(a, b) {
+    var flip = false;
+    return function (image) {
+      var next = flip ? a : b, prev = flip ? b : a;
+      if (image) {
+        flip = !flip;
+        next.style.backgroundImage = image;
+        next.classList.add('on');
+      } else {
+        next.classList.remove('on');
+      }
+      prev.classList.remove('on');
+    };
+  }
 
   var store = {
     get: function (k, def) {
@@ -50,22 +83,27 @@
   var items = [];           // ordered tiles: [{key, kind, id, title, icon, color, el, ...}]
   var focus = -1;           // index into items
   var mode = 'home';        // home | move | settings | cc
-  var dataSig = '';
+  var dataSig = '';         // what the grid was last built from, see sigOf()
 
   /* ------------------------------------------------------------------ data */
 
-  var MOCK_POINTS = ['Netflix#e50914', 'Prime Video#0578ff', 'Disney+#054553', 'Apple TV#000000', 'YouTube#ff0000',
-    'Joyn#003a43', 'RTL+#111111', 'WOW#002c2b', 'Spotify#1db954'].map(function (s) {
-    var p = s.split('#'); return { id: 'mock.' + p[0], title: p[0], iconColor: '#' + p[1], systemApp: false };
-  }).concat(['Apps#4faa6e', 'Web Browser#3b6fd6', 'Media Player#7a4fd0'].map(function (s) {
-    var p = s.split('#'); return { id: 'mock.' + p[0], title: p[0], iconColor: '#' + p[1], systemApp: true };
-  }));
+  function mockPoints(list, systemApp) {
+    return list.map(function (s) {
+      var p = s.split('#');
+      return { id: 'mock.' + p[0], title: p[0], iconColor: '#' + p[1], systemApp: systemApp };
+    });
+  }
+  var MOCK_POINTS = mockPoints(['Netflix#e50914', 'Prime Video#0578ff', 'Disney+#054553', 'Apple TV#000000', 'YouTube#ff0000',
+    'Joyn#003a43', 'RTL+#111111', 'WOW#002c2b', 'Spotify#1db954'], false)
+    .concat(mockPoints(['Apps#4faa6e', 'Web Browser#3b6fd6', 'Media Player#7a4fd0'], true));
 
   function defaultInputs() {
     return [1, 2, 3, 4].map(function (n) {
       return { id: 'HDMI_' + n, label: 'HDMI ' + n, port: n, appId: 'com.webos.app.hdmi' + n, hdmiPlugIn: true };
     });
   }
+
+  function sigOf(data) { return JSON.stringify(data) + '|' + prefs.showSystem; }
 
   function loadData() {
     if (!Luna.available) { return Promise.resolve({ points: MOCK_POINTS, inputs: defaultInputs() }); }
@@ -169,10 +207,8 @@
   }
 
   function isLight(hex) {
-    var m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
-    if (!m) { return false; }
-    var n = parseInt(m[1], 16);
-    return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 170;
+    var n = hexToInt(hex);
+    return n !== null && (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 170;
   }
 
   /* Many icons carry their own opaque box, sometimes smaller than the image.
@@ -231,9 +267,7 @@
   function attachIcon(art, item) {
     var letter = function () {
       art.innerHTML = '';
-      var s = document.createElement('span');
-      s.className = 'letter';
-      s.textContent = (item.title || '?').trim().charAt(0).toUpperCase();
+      var s = el('span', 'letter', (item.title || '?').trim().charAt(0).toUpperCase());
       if (isLight(item.color)) { s.style.color = 'rgba(0,0,0,.72)'; }
       art.appendChild(s);
     };
@@ -254,30 +288,23 @@
   /* ---------------------------------------------------------------- render */
 
   function makeTile(item) {
-    var tile = document.createElement('div');
-    tile.className = 'tile' + (item.kind === 'input' && !item.plugged ? ' unplugged' : '');
+    var tile = el('div', 'tile' + (item.kind === 'input' && !item.plugged ? ' unplugged' : ''));
     tile._item = item;
-    var shadow = document.createElement('div');
-    shadow.className = 'shadow';
-    tile.appendChild(shadow);
-    var card = document.createElement('div');
-    card.className = 'card';
+    var card = el('div', 'card');
     card.style.backgroundColor = item.color;
-    var art = document.createElement('div'); art.className = 'art';
-    var fill = document.createElement('div'); fill.className = 'fill';
-    var shine = document.createElement('div'); shine.className = 'shine';
+    var art = el('div', 'art');
     if (item.kind === 'app') {
       attachIcon(art, item);
     } else {
-      art.innerHTML = SVG[item.kind === 'settings' ? 'gear' : item.kind === 'tv' ? 'tv' : 'hdmi'] +
-        (item.port ? '<span class="port"></span>' : '');
-      if (item.port) { art.lastChild.textContent = item.port; }
+      art.innerHTML = SVG[item.kind];
+      if (item.port) { art.appendChild(el('span', 'port', item.port)); }
     }
-    card.appendChild(art); card.appendChild(fill); card.appendChild(shine);
-    var label = document.createElement('div');
-    label.className = 'label';
-    label.textContent = item.title;
-    tile.appendChild(card); tile.appendChild(label);
+    card.appendChild(art);
+    card.appendChild(el('div', 'fill'));
+    card.appendChild(el('div', 'shine'));
+    tile.appendChild(el('div', 'shadow'));
+    tile.appendChild(card);
+    tile.appendChild(el('div', 'label', item.title));
     item.el = tile;
     return tile;
   }
@@ -286,7 +313,7 @@
   function layout() {
     items.forEach(function (it, i) {
       var x = MARGIN_X + (i % COLS) * PITCH_X;
-      var y = Math.floor(i / COLS) * PITCH_Y;
+      var y = rowOf(i) * PITCH_Y;
       it.el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
       it.el.classList.toggle('dock', i < COLS);
     });
@@ -297,7 +324,8 @@
   /* Like the tvOS top shelf: the focused app's own artwork fills the background.
    * art-sync.sh copies the images the apps ship into our folder (see there). */
   var artMap = store.get('art', {});
-  var artTimer = null, artFlip = false, artShown = null, artSynced = false;
+  var artTimer = null, artShown = null, artSynced = false;
+  var fadeArt = crossfader($('artA'), $('artB'));
 
   function syncArt() {
     if (!Luna.available) { return; }
@@ -325,11 +353,9 @@
       var it = items[focus];
       var file = it && it.kind === 'app' ? artMap[it.id] : null;
       if (file === artShown) { return; }
-      var a = $('artA'), b = $('artB');
-      var next = artFlip ? a : b, prev = artFlip ? b : a;
       if (!file) {
         artShown = null;
-        a.classList.remove('on'); b.classList.remove('on');
+        fadeArt(null);
         stage.classList.remove('has-art');
         return;
       }
@@ -337,10 +363,7 @@
       var ready = function () {
         if (!items[focus] || artMap[items[focus].id] !== file) { return; }   // focus moved on
         artShown = file;
-        artFlip = !artFlip;
-        next.style.backgroundImage = 'url("art/' + file + '")';
-        next.classList.add('on');
-        prev.classList.remove('on');
+        fadeArt('url("art/' + file + '")');
         stage.classList.add('has-art');
       };
       img.src = 'art/' + file;
@@ -359,33 +382,26 @@
     var idx = 0;
     items.forEach(function (it, i) { if (it.key === prevKey) { idx = i; } });
     focus = -1;
-    setFocus(idx, { instant: true });
+    setFocus(idx);
     // the control center owns the highlight while it is open (closeCC restores it)
     if (mode === 'cc' && items[focus]) { items[focus].el.classList.remove('focus'); }
   }
 
   /* ----------------------------------------------------------------- focus */
 
-  var ambientFlip = false;
   var ambientTimer = null;
+  var fadeAmbient = crossfader($('ambientA'), $('ambientB'));
 
   function glow(color) {
-    var m = /^#?([0-9a-f]{6})$/i.exec(color || '');
-    var n = m ? parseInt(m[1], 16) : 0x333333;
+    var n = hexToInt(color);
+    if (n === null) { n = 0x333333; }
     var rgb = (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255);
     return 'radial-gradient(ellipse 70% 75% at 50% 35%, rgba(' + rgb + ',.95), rgba(' + rgb + ',0))';
   }
 
   function setAmbient(color) {
     clearTimeout(ambientTimer);
-    ambientTimer = setTimeout(function () {
-      var a = $('ambientA'), b = $('ambientB');
-      var next = ambientFlip ? a : b, prev = ambientFlip ? b : a;
-      ambientFlip = !ambientFlip;
-      next.style.backgroundImage = glow(color);
-      next.classList.add('on');
-      prev.classList.remove('on');
-    }, 140);
+    ambientTimer = setTimeout(function () { fadeAmbient(glow(color)); }, 140);
   }
 
   function setTilt(tile, x, y) {   // x, y in [-1, 1]
@@ -403,7 +419,7 @@
   /* Row 0 is the dock: it sits at the bottom of the screen over the wallpaper.
    * Moving below it slides the whole grid up, like the tvOS home screen. */
   function scrollGrid() {
-    var r = Math.floor(focus / COLS);
+    var r = rowOf(focus);
     var y;
     if (r === 0 && mode !== 'move') {
       y = SHELF_Y;
@@ -417,10 +433,10 @@
     gridEl.style.transform = 'translate3d(0,' + y + 'px,0)';
   }
 
-  function setFocus(i, opts) {
-    opts = opts || {};
+  function setFocus(i, how) {
+    how = how || {};
     if (!items.length) { return; }
-    i = Math.max(0, Math.min(i, items.length - 1));
+    i = clamp(i, 0, items.length - 1);
     if (i === focus) { return; }
 
     var old = items[focus] && items[focus].el;
@@ -428,7 +444,7 @@
 
     var dx = 0, dy = 0;
     if (focus >= 0) {
-      dy = Math.sign(Math.floor(i / COLS) - Math.floor(focus / COLS));
+      dy = Math.sign(rowOf(i) - rowOf(focus));
       dx = dy ? 0 : Math.sign(i - focus);
     }
     focus = i;
@@ -436,10 +452,10 @@
 
     // D-pad parallax: the tile swings in the direction of travel, then settles
     clearTimeout(nudgeTimer);
-    if (!opts.pointer && !opts.instant && (dx || dy)) {
+    if (!how.pointer && (dx || dy)) {
       setTilt(tile, dx * 0.9, dy * 0.8);
       nudgeTimer = setTimeout(function () { setTilt(tile, 0, 0); }, 230);
-    } else if (!opts.pointer) {
+    } else if (!how.pointer) {
       setTilt(tile, 0, 0);
     }
     tile.classList.add('focus');
@@ -458,7 +474,7 @@
     if (t < 0) { return focus; }
     if (t >= items.length) {
       // last row is shorter: land on its last tile if there is a row below at all
-      return Math.floor((items.length - 1) / COLS) > Math.floor(focus / COLS) ? items.length - 1 : focus;
+      return rowOf(items.length - 1) > rowOf(focus) ? items.length - 1 : focus;
     }
     return t;
   }
@@ -520,12 +536,18 @@
     }
     if (!Luna.available) { toast('launch ' + item.id); return; }
 
-    stage.classList.add('launching');
-    var payload = { id: item.id };
-    if (item.params && Object.keys(item.params).length) { payload.params = item.params; }
+    launchApp(item.id, item.params && Object.keys(item.params).length ? item.params : null);
+  }
+
+  function launchApp(id, params, overlay) {
+    closeCC();
+    // overlays (LG settings) draw on top of the launcher: keep it visible
+    if (!overlay) { stage.classList.add('launching'); }
+    var payload = { id: id };
+    if (params) { payload.params = params; }
     Luna.smartCall('luna://com.webos.applicationManager/launch', payload).catch(function (e) {
       stage.classList.remove('launching');
-      toast(T.launchFail + (e && e.message || item.id));
+      toast(T.launchFail + (e && e.message || id));
     });
     // safety net if the target never takes over the screen
     setTimeout(function () { if (!document.hidden) { stage.classList.remove('launching'); } }, 6000);
@@ -540,6 +562,19 @@
     ' && ' + INIT_SCRIPT + ' --no-boot-launch';
   var REMOVE_HOOK = '[ -x ' + INIT_SCRIPT + ' ] && ' + INIT_SCRIPT + ' --stop; rm -rf ' + INIT_SCRIPT + ' ' + CONF_DIR;
 
+  function rebuild() { dataSig = ''; refresh(); return Promise.resolve(); }
+
+  var SETTINGS_SERVICE = 'luna://com.webos.settingsservice/';
+  function getSetting(category, key) {
+    return Luna.smartCall(SETTINGS_SERVICE + 'getSystemSettings', { category: category, keys: [key] })
+      .then(function (r) { return r.settings[key]; });
+  }
+  function setSetting(category, key, value) {
+    var settings = {};
+    settings[key] = value;
+    return Luna.smartCall(SETTINGS_SERVICE + 'setSystemSettings', { category: category, settings: settings });
+  }
+
   var optIndex = 0;
   var opts = [
     {
@@ -553,51 +588,40 @@
     {
       label: T.homeAuto, desc: T.homeAutoDesc, value: null,
       read: function () {
-        return Luna.smartCall('luna://com.webos.settingsservice/getSystemSettings', { category: 'general', keys: ['homeAutoLaunch'] })
-          .then(function (r) { return r.settings.homeAutoLaunch === 'on'; });
+        return getSetting('general', 'homeAutoLaunch').then(function (v) { return v === 'on'; });
       },
-      write: function (on) {
-        return Luna.smartCall('luna://com.webos.settingsservice/setSystemSettings',
-          { category: 'general', settings: { homeAutoLaunch: on ? 'on' : 'off' } });
-      }
+      write: function (on) { return setSetting('general', 'homeAutoLaunch', on ? 'on' : 'off'); }
     },
     {
       label: T.showSystem, desc: T.showSystemDesc, value: null, local: true,
       read: function () { return Promise.resolve(!!prefs.showSystem); },
       write: function (on) {
-        prefs.showSystem = on; store.set('prefs', prefs); dataSig = ''; refresh();
-        return Promise.resolve();
+        prefs.showSystem = on; store.set('prefs', prefs);
+        return rebuild();
       }
     },
     {
       label: T.resetOrder, desc: T.resetOrderDesc, value: null, local: true, action: T.reset,
       read: function () { return Promise.resolve(true); },
       write: function () {
-        store.set('order', []); dataSig = ''; refresh();
-        return Promise.resolve();
+        store.set('order', []);
+        return rebuild();
       }
     }
   ];
 
   function renderSettings() {
-    $('settingsTitle').textContent = T.settings;
-    $('settingsHint').textContent = T.hint;
     var list = $('settingsList');
     list.innerHTML = '';
     opts.forEach(function (o, i) {
-      var el = document.createElement('div');
-      el.className = 'opt' + (i === optIndex ? ' focus' : '');
-      el._opt = i;
-      var left = document.createElement('div');
-      left.textContent = o.label;
-      var small = document.createElement('small');
-      small.textContent = o.desc;
-      left.appendChild(small);
-      var val = document.createElement('div');
-      val.className = 'val';
-      val.textContent = o.action || (o.value === null ? '…' : o.value === undefined ? T.na : o.value ? T.on : T.off);
-      el.appendChild(left); el.appendChild(val);
-      list.appendChild(el);
+      var row = el('div', 'opt' + (i === optIndex ? ' focus' : ''));
+      row._opt = i;
+      var left = el('div', '', o.label);
+      left.appendChild(el('small', '', o.desc));
+      row.appendChild(left);
+      row.appendChild(el('div', 'val',
+        o.action || (o.value === null ? '…' : o.value === undefined ? T.na : o.value ? T.on : T.off)));
+      list.appendChild(row);
     });
   }
 
@@ -609,7 +633,6 @@
     mode = 'settings';
     optIndex = 0;
     opts.forEach(function (o) { o.value = null; });
-    renderSettings();
     $('settings').classList.remove('hidden');
     opts.forEach(function (o) {
       if (Luna.available || o.local) { readOption(o); } else { o.value = undefined; }
@@ -628,10 +651,7 @@
     var target = !o.value;
     o.value = null;
     renderSettings();
-    o.write(target).then(function () { return readOption(o); }, function (e) {
-      toast((e && e.message) || T.needRoot);
-      return readOption(o);
-    });
+    o.write(target).catch(failToast).then(function () { return readOption(o); });
   }
 
   /* After an app update the installed hook may be outdated: refresh it silently. */
@@ -666,27 +686,14 @@
   var ccFocus = 0;
   var screenOff = false;
 
-  function launchApp(id, params, overlay) {
-    closeCC();
-    // overlays (LG settings) draw on top of the launcher: keep it visible
-    if (!overlay) { stage.classList.add('launching'); }
-    var payload = { id: id };
-    if (params) { payload.params = params; }
-    Luna.smartCall('luna://com.webos.applicationManager/launch', payload).catch(function (e) {
-      stage.classList.remove('launching');
-      toast(T.launchFail + (e && e.message || id));
-    });
-    setTimeout(function () { if (!document.hidden) { stage.classList.remove('launching'); } }, 6000);
-  }
-
   /* Closed, only the clock pill shows. "Up" from the dock unfolds the panel below it:
-   * a 4-column grid of glass tiles (x, y, w, h in cells), as in the tvOS control center. */
+   * a 4-column grid of glass tiles (x, y, w, h in cells), as in the tvOS control center.
+   * icon, title, sub and on are plain values, or functions where they depend on ccState. */
   var ccItems = [
-    { id: 'power', x: 0, y: 0, w: 2, h: 2, kind: 'big', icon: function () { return 'power'; },
-      title: function () { return T.ccPower; },
+    { id: 'power', x: 0, y: 0, w: 2, h: 2, kind: 'big', icon: 'power', title: T.ccPower,
       run: function () {
         closeCC();
-        Luna.smartCall('luna://com.webos.service.tvpower/power/powerOff', { reason: 'remoteKey' }).catch(ccFail);
+        Luna.smartCall('luna://com.webos.service.tvpower/power/powerOff', { reason: 'remoteKey' }).catch(failToast);
       } },
     { id: 'net', x: 2, y: 0, w: 2, h: 1, kind: 'pill',
       icon: function () { return ccState.net && ccState.net.type === 'lan' ? 'lan' : 'wifi'; },
@@ -703,72 +710,60 @@
         var target = !ccState.muted;
         Luna.smartCall('luna://com.webos.service.apiadapter/audio/setMute', { mute: target })
           .catch(function () { return Luna.smartCall('luna://com.webos.audio/setMuted', { muted: target }); })
-          .then(function () { ccState.muted = target; renderCC(); }, ccFail);
+          .then(function () { ccState.muted = target; renderCC(); }, failToast);
       } },
-    { id: 'screen', x: 0, y: 2, w: 2, h: 1, kind: 'pill', icon: function () { return 'screen'; },
-      title: function () { return T.ccScreen; }, sub: function () { return T.ccScreenSub; },
+    { id: 'screen', x: 0, y: 2, w: 2, h: 1, kind: 'pill', icon: 'screen', title: T.ccScreen, sub: T.ccScreenSub,
       run: function () {
         closeCC();
         // wait for the OK key to be released: any key event turns the screen back on
         setTimeout(function () {
-          Luna.smartCall('luna://com.webos.service.tvpower/power/turnOffScreen', {}).then(function () { screenOff = true; }, ccFail);
+          Luna.smartCall('luna://com.webos.service.tvpower/power/turnOffScreen', {}).then(function () { screenOff = true; }, failToast);
         }, 700);
       } },
-    { id: 'sleep', x: 2, y: 2, w: 2, h: 1, kind: 'pill', icon: function () { return 'sleep'; },
-      title: function () { return T.ccSleep; },
+    { id: 'sleep', x: 2, y: 2, w: 2, h: 1, kind: 'pill', icon: 'sleep', title: T.ccSleep,
       sub: function () { return ccState.sleep === null ? '…' : ccState.sleep === 'off' ? T.off : ccState.sleep + T.ccMin; },
       on: function () { return !!ccState.sleep && ccState.sleep !== 'off'; },
       run: function () {
         var i = SLEEP_STEPS.indexOf(ccState.sleep);
         var next = SLEEP_STEPS[(i + 1) % SLEEP_STEPS.length];
-        Luna.smartCall('luna://com.webos.settingsservice/setSystemSettings', { category: 'time', settings: { sleepTimer: next } })
-          .then(function () { ccState.sleep = next; renderCC(); }, ccFail);
+        setSetting('time', 'sleepTimer', next)
+          .then(function () { ccState.sleep = next; renderCC(); }, failToast);
       } },
-    { id: 'launcher', x: 0, y: 3, w: 1, h: 1, kind: 'round', icon: function () { return 'gear'; },
-      title: function () { return T.settings; },
+    { id: 'launcher', x: 0, y: 3, w: 1, h: 1, kind: 'round', icon: 'gear', title: T.settings,
       run: function () { closeCC(); openSettings(); } },
-    { id: 'tvsettings', x: 1, y: 3, w: 1, h: 1, kind: 'round', icon: function () { return 'sliders'; },
-      title: function () { return T.ccSettings; },
+    { id: 'tvsettings', x: 1, y: 3, w: 1, h: 1, kind: 'round', icon: 'sliders', title: T.ccSettings,
       run: function () { launchApp('com.palm.app.settings', null, true); } },
-    { id: 'dashboard', x: 2, y: 3, w: 1, h: 1, kind: 'round', icon: function () { return 'house'; },
-      title: function () { return T.ccDashboard; },
+    { id: 'dashboard', x: 2, y: 3, w: 1, h: 1, kind: 'round', icon: 'house', title: T.ccDashboard,
       run: function () { launchApp('com.webos.app.homeconnect'); } },
-    { id: 'reboot', x: 3, y: 3, w: 1, h: 1, kind: 'round', icon: function () { return 'reboot'; },
-      title: function () { return T.ccReboot; },
+    { id: 'reboot', x: 3, y: 3, w: 1, h: 1, kind: 'round', icon: 'reboot', title: T.ccReboot,
       run: function () {
         closeCC();
-        Luna.smartCall('luna://com.webos.service.sleep/shutdown/machineReboot', { reason: 'remoteKey' }).catch(ccFail);
+        Luna.smartCall('luna://com.webos.service.sleep/shutdown/machineReboot', { reason: 'remoteKey' }).catch(failToast);
       } }
   ];
   var CC_DEFAULT = 1;   // never land on "Power Off" by default
+  var CC_CELL = 96, CC_GAP = 20;   // 4 cells + 3 gaps = the 444px of #cc in style.css
 
-  function ccFail(e) { toast((e && e.message) || T.needRoot); }
+  function ccVal(v) { return typeof v === 'function' ? v() : v; }
+
+  function failToast(e) { toast((e && e.message) || T.needRoot); }
 
   function renderCC() {
-    var CELL = 96, GAP = 20;
     var box = $('ccGrid');
     box.innerHTML = '';
     ccItems.forEach(function (it, i) {
-      var el = document.createElement('div');
-      el.className = 'cc ' + it.kind + (mode === 'cc' && i === ccFocus ? ' focus' : '') + (it.on && it.on() ? ' on' : '');
-      el.style.left = (it.x * (CELL + GAP)) + 'px';
-      el.style.top = (it.y * (CELL + GAP)) + 'px';
-      el.style.width = (it.w * CELL + (it.w - 1) * GAP) + 'px';
-      el.style.height = (it.h * CELL + (it.h - 1) * GAP) + 'px';
-      el._cc = i;
-      el.innerHTML = '<span class="ic">' + icon(it.icon()) + '</span>';
-      var txt = document.createElement('span');
-      txt.className = 'tx';
-      var b = document.createElement('b');
-      b.textContent = it.title();
-      txt.appendChild(b);
-      if (it.sub) {
-        var s = document.createElement('small');
-        s.textContent = it.sub();
-        txt.appendChild(s);
-      }
-      el.appendChild(txt);
-      box.appendChild(el);
+      var tile = el('div', 'cc ' + it.kind + (mode === 'cc' && i === ccFocus ? ' focus' : '') + (ccVal(it.on) ? ' on' : ''));
+      tile.style.left = (it.x * (CC_CELL + CC_GAP)) + 'px';
+      tile.style.top = (it.y * (CC_CELL + CC_GAP)) + 'px';
+      tile.style.width = (it.w * CC_CELL + (it.w - 1) * CC_GAP) + 'px';
+      tile.style.height = (it.h * CC_CELL + (it.h - 1) * CC_GAP) + 'px';
+      tile._cc = i;
+      tile.innerHTML = '<span class="ic">' + icon(ccVal(it.icon)) + '</span>';
+      var txt = el('span', 'tx');
+      txt.appendChild(el('b', '', ccVal(it.title)));
+      if (it.sub) { txt.appendChild(el('small', '', ccVal(it.sub))); }
+      tile.appendChild(txt);
+      box.appendChild(tile);
     });
   }
 
@@ -790,16 +785,16 @@
       ccState.volume = r.volume;
       renderCC();
     }, function () {});
-    Luna.smartCall('luna://com.webos.settingsservice/getSystemSettings', { category: 'time', keys: ['sleepTimer'] }).then(function (r) {
-      ccState.sleep = r.settings.sleepTimer;
+    getSetting('time', 'sleepTimer').then(function (v) {
+      ccState.sleep = v;
       renderCC();
     }, function () {});
   }
 
-  function openCC(index) {
+  function openCC() {
     if (mode !== 'home') { return; }
     mode = 'cc';
-    ccFocus = index === undefined ? CC_DEFAULT : index;
+    ccFocus = CC_DEFAULT;
     if (items[focus]) { items[focus].el.classList.remove('focus'); }
     stage.classList.add('cc-open');
     renderCC();
@@ -837,17 +832,14 @@
 
   /* ----------------------------------------------------------------- input */
 
-  var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 461, ESC: 27, BKSP: 8 };
+  var KEY = { OK: 13, BACK: 461, ESC: 27, BKSP: 8 };
+  var ARROWS = { 37: [-1, 0], 38: [0, -1], 39: [1, 0], 40: [0, 1] };   // key code -> [dx, dy]
   var okTimer = null, okDown = false, okConsumed = false;
-
-  function arrows(k) {
-    return k === KEY.LEFT ? [-1, 0] : k === KEY.RIGHT ? [1, 0] : k === KEY.UP ? [0, -1] : k === KEY.DOWN ? [0, 1] : null;
-  }
 
   document.addEventListener('keydown', function (e) {
     var k = e.keyCode;
     var isBack = k === KEY.BACK || k === KEY.ESC || k === KEY.BKSP;
-    var dir = arrows(k);
+    var dir = ARROWS[k];
 
     // "Screen off" from the control center: the first key only wakes the screen
     if (screenOff) {
@@ -867,8 +859,7 @@
     }
 
     if (mode === 'settings') {
-      if (k === KEY.UP) { optIndex = Math.max(0, optIndex - 1); renderSettings(); }
-      else if (k === KEY.DOWN) { optIndex = Math.min(opts.length - 1, optIndex + 1); renderSettings(); }
+      if (dir && dir[1]) { optIndex = clamp(optIndex + dir[1], 0, opts.length - 1); renderSettings(); }
       else if (k === KEY.OK) { if (!e.repeat) { toggleOption(); } }
       else if (isBack) { closeSettings(); }
       else { return; }
@@ -907,20 +898,13 @@
     if (fire) { activate(); }
   });
 
-  function tileOf(target) {
-    while (target && target !== document) {
-      if (target._item) { return target; }
-      target = target.parentNode;
-    }
-    return null;
-  }
+  function tileOf(target) { return owner(target, '_item'); }
 
   // Magic Remote pointer: hover focuses, the focused tile tilts towards the cursor
   document.addEventListener('mousemove', function (e) {
     if (mode === 'cc') {
-      var c = e.target;
-      while (c && c !== document && c._cc === undefined) { c = c.parentNode; }
-      if (c && c._cc !== undefined && c._cc !== ccFocus) { ccFocus = c._cc; renderCC(); }
+      var c = owner(e.target, '_cc');
+      if (c && c._cc !== ccFocus) { ccFocus = c._cc; renderCC(); }
       return;
     }
     if (mode !== 'home') { return; }
@@ -929,7 +913,7 @@
     var i = items.indexOf(tile._item);
     if (i !== focus) {
       // hovering must not make the grid jump between dock and grid position
-      var sameZone = (Math.floor(i / COLS) === 0) === (Math.floor(focus / COLS) === 0);
+      var sameZone = (rowOf(i) === 0) === (rowOf(focus) === 0);
       if (!sameZone) { return; }
       setFocus(i, { pointer: true });
     }
@@ -938,7 +922,7 @@
     var y = ((e.clientY - rect.top) / rect.height) * 2 - 1;
     clearTimeout(nudgeTimer);
     tile.classList.add('live');
-    setTilt(tile, Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y)));
+    setTilt(tile, clamp(x, -1, 1), clamp(y, -1, 1));
   });
 
   document.addEventListener('mouseout', function (e) {
@@ -961,18 +945,16 @@
 
   document.addEventListener('click', function (e) {
     if (longPressed) { longPressed = false; return; }
-    var n = e.target;
-    while (n && n !== document && n._cc === undefined && n.id !== 'top') { n = n.parentNode; }
     if (mode === 'cc') {
-      if (n && n._cc !== undefined) { ccFocus = n._cc; renderCC(); ccItems[ccFocus].run(); }
+      var c = owner(e.target, '_cc');
+      if (c) { ccFocus = c._cc; renderCC(); ccItems[ccFocus].run(); }
       else { closeCC(); }
       return;
     }
-    if (mode === 'home' && n && n.id === 'top') { openCC(); return; }
+    if (mode === 'home' && $('top').contains(e.target)) { openCC(); return; }
     if (mode === 'settings') {
-      var t = e.target;
-      while (t && t !== document && t._opt === undefined) { t = t.parentNode; }
-      if (t && t._opt !== undefined) { optIndex = t._opt; renderSettings(); toggleOption(); }
+      var t = owner(e.target, '_opt');
+      if (t) { optIndex = t._opt; renderSettings(); toggleOption(); }
       else if (e.target === $('settings')) { closeSettings(); }
       return;
     }
@@ -994,28 +976,37 @@
 
   /* ------------------------------------------------------------- lifecycle */
 
+  var refreshing = null;
+
   function refresh() {
     if (mode === 'move') { return Promise.resolve(); }
-    return loadData().then(function (data) {
+    if (refreshing) { return refreshing; }   // one load at a time; it reads prefs and order when it lands
+    var done = function () { refreshing = null; };
+    refreshing = loadData().then(function (data) {
       if (mode === 'move') { return; }   // picked up meanwhile: the next refresh catches up
-      store.set('data', data);
-      var sig = JSON.stringify(data) + '|' + prefs.showSystem;
-      if (sig === dataSig) {
-        if (!artSynced) { artSynced = true; syncArt(); }
-        return;
+      var sig = sigOf(data);
+      var changed = sig !== dataSig;
+      if (changed) {
+        dataSig = sig;
+        store.set('data', data);
+        render(buildModel(data));
       }
-      dataSig = sig;
-      render(buildModel(data));
-      artSynced = true;
-      syncArt();
+      if (changed || !artSynced) { artSynced = true; syncArt(); }
     }, function () {
       if (!items.length) { render(buildModel({ points: [], inputs: defaultInputs() })); }
       toast(T.listFail);
     });
+    refreshing.then(done, done);
+    return refreshing;
   }
 
+  // the clock follows the TV's own locale (24-hour time on a German TV)
+  var clockFormat = new Intl.DateTimeFormat(navigator.language, { hour: '2-digit', minute: '2-digit' });
+  var clockText = '';
+
   function tick() {
-    $('time').textContent = new Date().toLocaleTimeString(navigator.language, { hour: '2-digit', minute: '2-digit' });
+    var text = clockFormat.format(new Date());
+    if (text !== clockText) { clockText = text; $('time').textContent = text; }
   }
 
   function enter() {
@@ -1047,6 +1038,8 @@
 
   fit();
   tick();
+  $('settingsTitle').textContent = T.settings;
+  $('settingsHint').textContent = T.hint;
   renderCC();
   loadCCState();
   setInterval(tick, 10000);
@@ -1056,7 +1049,7 @@
   // paint instantly from the last known list, then update from the TV
   var cached = store.get('data', null);
   if (cached && cached.points && Luna.available) {
-    dataSig = JSON.stringify(cached) + '|' + prefs.showSystem;
+    dataSig = sigOf(cached);
     render(buildModel(cached));
   }
   enter();
