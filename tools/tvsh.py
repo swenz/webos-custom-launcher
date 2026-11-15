@@ -19,8 +19,8 @@ def read_some():
     i = 0
     while i < len(data):
         b = data[i]
-        if b == 255 and i + 2 < len(data) + 1:  # IAC
-            op = data[i + 1] if i + 1 < len(data) else 0
+        if b == 255 and i + 1 < len(data):  # IAC
+            op = data[i + 1]
             opt = data[i + 2:i + 3]
             if op in (251, 252):  # WILL/WONT -> DONT
                 s.sendall(bytes([255, 254]) + opt)
