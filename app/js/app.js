@@ -14,40 +14,21 @@
   var GRID_Y = 190;       // grid top once you move below the dock (leaves room for the clock)
   var HOLD_MS = 550;      // long press on OK starts moving a tile
 
-  var lang = (navigator.language || 'en').slice(0, 2) === 'de' ? 'de' : 'en';
-  var STR = {
-    de: {
-      liveTv: 'Live TV', settings: 'Launcher-Einstellungen',
-      on: 'An', off: 'Aus', na: 'n. v.',
-      replaceHome: 'LG Home ersetzen', replaceHomeDesc: 'Home-Taste öffnet diesen Launcher statt des LG-Startbildschirms',
-      homeAuto: 'Beim Einschalten öffnen', homeAutoDesc: 'LG-Option „Home Auto Launch“ – zeigt den Startbildschirm nach dem Einschalten',
-      showSystem: 'System-Apps anzeigen', showSystemDesc: 'Vorinstallierte LG-Apps im Raster zeigen',
-      resetOrder: 'Sortierung zurücksetzen', resetOrderDesc: 'Standard-Reihenfolge wiederherstellen', reset: 'Zurücksetzen',
-      hint: 'OK = umschalten   ·   Zurück = schließen',
-      moveHint: 'Pfeiltasten: verschieben   ·   OK: fertig',
-      ccPower: 'Ausschalten', ccWifi: 'WLAN', ccLan: 'LAN', ccOffline: 'Nicht verbunden',
-      ccScreen: 'Bildschirm', ccScreenSub: 'ausschalten', ccSettings: 'TV-Einstellungen', ccDashboard: 'Home Dashboard', ccReboot: 'Neustart', ccSound: 'Ton an', ccMuted: 'Stumm', ccVolume: 'Stufe ',
-      ccSleep: 'Sleep-Timer', ccMin: ' Min.',
-      launchFail: 'Start fehlgeschlagen: ', needRoot: 'Homebrew-Channel-Dienst nicht erreichbar (Root nötig)',
-      listFail: 'App-Liste konnte nicht geladen werden'
-    },
-    en: {
-      liveTv: 'Live TV', settings: 'Launcher Settings',
-      on: 'On', off: 'Off', na: 'n/a',
-      replaceHome: 'Replace LG Home', replaceHomeDesc: 'The Home button opens this launcher instead of the LG home screen',
-      homeAuto: 'Open at power-on', homeAutoDesc: 'LG option “Home Auto Launch” – shows the home screen after power-on',
-      showSystem: 'Show system apps', showSystemDesc: 'Show preinstalled LG apps in the grid',
-      resetOrder: 'Reset order', resetOrderDesc: 'Restore the default arrangement', reset: 'Reset',
-      hint: 'OK = toggle   ·   Back = close',
-      moveHint: 'Arrow keys: move   ·   OK: done',
-      ccPower: 'Power Off', ccWifi: 'Wi-Fi', ccLan: 'LAN', ccOffline: 'Not connected',
-      ccScreen: 'Screen', ccScreenSub: 'turn off', ccSettings: 'TV settings', ccDashboard: 'Home Dashboard', ccReboot: 'Restart', ccSound: 'Sound on', ccMuted: 'Muted', ccVolume: 'Level ',
-      ccSleep: 'Sleep Timer', ccMin: ' min',
-      launchFail: 'Launch failed: ', needRoot: 'Homebrew Channel service not reachable (root required)',
-      listFail: 'Could not load the app list'
-    }
+  var T = {
+    liveTv: 'Live TV', settings: 'Launcher Settings',
+    on: 'On', off: 'Off', na: 'n/a',
+    replaceHome: 'Replace LG Home', replaceHomeDesc: 'The Home button opens this launcher instead of the LG home screen',
+    homeAuto: 'Open at power-on', homeAutoDesc: 'LG option “Home Auto Launch” – shows the home screen after power-on',
+    showSystem: 'Show system apps', showSystemDesc: 'Show preinstalled LG apps in the grid',
+    resetOrder: 'Reset order', resetOrderDesc: 'Restore the default arrangement', reset: 'Reset',
+    hint: 'OK = toggle   ·   Back = close',
+    moveHint: 'Arrow keys: move   ·   OK: done',
+    ccPower: 'Power Off', ccWifi: 'Wi-Fi', ccLan: 'LAN', ccOffline: 'Not connected',
+    ccScreen: 'Screen', ccScreenSub: 'turn off', ccSettings: 'TV settings', ccDashboard: 'Home Dashboard', ccReboot: 'Restart', ccSound: 'Sound on', ccMuted: 'Muted', ccVolume: 'Level ',
+    ccSleep: 'Sleep Timer', ccMin: ' min',
+    launchFail: 'Launch failed: ', needRoot: 'Homebrew Channel service not reachable (root required)',
+    listFail: 'Could not load the app list'
   };
-  var T = STR[lang];
 
   var SVG = {
     hdmi: '<svg viewBox="0 0 96 96" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"><path d="M12 30h72v20l-12 16H24L12 50z"/><path d="M30 44h36"/></svg>',
@@ -76,7 +57,7 @@
   var MOCK_POINTS = ['Netflix#e50914', 'Prime Video#0578ff', 'Disney+#054553', 'Apple TV#000000', 'YouTube#ff0000',
     'Joyn#003a43', 'RTL+#111111', 'WOW#002c2b', 'Spotify#1db954'].map(function (s) {
     var p = s.split('#'); return { id: 'mock.' + p[0], title: p[0], iconColor: '#' + p[1], systemApp: false };
-  }).concat(['Apps#4faa6e', 'Webbrowser#3b6fd6', 'Media Player#7a4fd0'].map(function (s) {
+  }).concat(['Apps#4faa6e', 'Web Browser#3b6fd6', 'Media Player#7a4fd0'].map(function (s) {
     var p = s.split('#'); return { id: 'mock.' + p[0], title: p[0], iconColor: '#' + p[1], systemApp: true };
   }));
 
@@ -1034,7 +1015,7 @@
   }
 
   function tick() {
-    $('time').textContent = new Date().toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
+    $('time').textContent = new Date().toLocaleTimeString(navigator.language, { hour: '2-digit', minute: '2-digit' });
   }
 
   function enter() {
