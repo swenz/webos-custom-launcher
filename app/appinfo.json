@@ -1,6 +1,6 @@
 {
   "id": "io.github.swenz.customlauncher",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "vendor": "Custom Launcher",
   "type": "web",
   "main": "index.html",

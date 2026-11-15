@@ -14,7 +14,10 @@
   var GRID_Y = 190;       // grid top once you move below the dock (leaves room for the clock)
   var HOLD_MS = 550;      // long press on OK starts moving a tile
 
-  var lang = (navigator.language || 'en').slice(0, 2) === 'de' ? 'de' : 'en';
+  // UI language follows the TV; the launch parameter {"lang":"en"} overrides it (used for screenshots)
+  var launchLang = '';
+  try { launchLang = JSON.parse(window.PalmSystem.launchParams || '{}').lang || ''; } catch (e) {}
+  var lang = (launchLang || navigator.language || 'en').slice(0, 2) === 'de' ? 'de' : 'en';
   var STR = {
     de: {
       liveTv: 'Live TV', settings: 'Launcher-Einstellungen',
@@ -1042,7 +1045,10 @@
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) { enter(); tick(); refresh(); loadCCState(); }
   });
-  document.addEventListener('webOSRelaunch', function () {
+  document.addEventListener('webOSRelaunch', function (e) {
+    // relaunched with another {"lang": ...}: start over in that language
+    var want = e && e.detail && e.detail.lang;
+    if (want && want.slice(0, 2) !== lang) { location.reload(); return; }
     // Home button while the launcher is already showing: back to the first tile
     var wasVisible = !document.hidden;
     if (mode === 'settings') { closeSettings(); }

@@ -2,11 +2,15 @@
 
 A tvOS-style home screen for **rooted LG webOS TVs** with the [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel). It can replace LG Home, so the Home button on the remote opens this launcher.
 
-![Dock on the wallpaper](docs/screenshot.jpg)
+![Dock with the focused app's artwork as wallpaper](docs/screenshot.jpg)
 
-| App grid | Control center |
+| App grid | Re-ordering tiles |
 | --- | --- |
-| ![App grid](docs/screenshot-grid.jpg) | ![Control center](docs/screenshot-control-center.jpg) |
+| ![App grid](docs/screenshot-grid.jpg) | ![A picked-up tile being moved](docs/screenshot-reorder.jpg) |
+
+| Control center | Launcher settings |
+| --- | --- |
+| ![Control center](docs/screenshot-control-center.jpg) | ![Launcher settings](docs/screenshot-settings.jpg) |
 
 ## Features
 
@@ -27,20 +31,20 @@ A tvOS-style home screen for **rooted LG webOS TVs** with the [Homebrew Channel]
 
 ## Installation
 
-Download the IPK from the [releases](https://github.com/swenz/webos-custom-launcher/releases): `io.github.swenz.customlauncher_1.3.0_all.ipk`.
+Download the IPK from the [releases](https://github.com/swenz/webos-custom-launcher/releases): `io.github.swenz.customlauncher_1.3.1_all.ipk`.
 
 **Option A – webOS Dev Manager** ([download](https://github.com/webosbrew/dev-manager-desktop)): connect the TV, choose *Apps → Install* and pick the IPK.
 
 **Option B – webOS CLI** (`npm i -g @webos-tools/cli`, set the TV up once with `ares-setup-device`):
 
 ```bash
-ares-install -d <device> io.github.swenz.customlauncher_1.3.0_all.ipk
+ares-install -d <device> io.github.swenz.customlauncher_1.3.1_all.ipk
 ```
 
 **Option C – on the TV itself** (SSH or telnet as root):
 
 ```bash
-cd /tmp && wget -O cl.ipk https://github.com/swenz/webos-custom-launcher/releases/download/v1.3.0/io.github.swenz.customlauncher_1.3.0_all.ipk
+cd /tmp && wget -O cl.ipk https://github.com/swenz/webos-custom-launcher/releases/download/v1.3.1/io.github.swenz.customlauncher_1.3.1_all.ipk
 luna-send -i -f luna://com.webos.appInstallService/dev/install '{"id":"io.github.swenz.customlauncher","ipkUrl":"/tmp/cl.ipk","subscribe":true}'
 ```
 
@@ -97,26 +101,13 @@ This creates `dist/io.github.swenz.customlauncher_<version>_all.ipk` and updates
 
 `tools/tvsh.py <tv-ip> '<command>'` runs a command through the Homebrew Channel's root telnet, for testing.
 
-## webosbrew manifest
+## Homebrew Channel manifest
 
-[`io.github.swenz.customlauncher.manifest.json`](io.github.swenz.customlauncher.manifest.json):
+Every release carries its manifest as an asset. The latest one is always at
+<https://github.com/swenz/webos-custom-launcher/releases/latest/download/io.github.swenz.customlauncher.manifest.json>;
+a copy lives in the repository as [`io.github.swenz.customlauncher.manifest.json`](io.github.swenz.customlauncher.manifest.json).
 
-```json
-{
-  "id": "io.github.swenz.customlauncher",
-  "version": "1.3.0",
-  "type": "web",
-  "title": "Custom Launcher",
-  "appDescription": "Apple-TV-style home screen for rooted LG webOS TVs",
-  "iconUri": "https://github.com/swenz/webos-custom-launcher/raw/main/app/largeIcon.png",
-  "sourceUrl": "https://github.com/swenz/webos-custom-launcher",
-  "rootRequired": true,
-  "ipkUrl": "https://github.com/swenz/webos-custom-launcher/releases/download/v1.3.0/io.github.swenz.customlauncher_1.3.0_all.ipk",
-  "ipkHash": {
-    "sha256": "091b35c17f0f26a3ce260cfd8e9686fa6fb7b1fc90bbb9f8f7a6fe38e6260847"
-  }
-}
-```
+The interface is German on a TV set to German and English otherwise.
 
 ## License
 
