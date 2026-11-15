@@ -1,6 +1,6 @@
 {
   "name": "webos-custom-launcher",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Apple-TV-style home screen for rooted LG webOS TVs (Homebrew Channel)",
   "license": "MIT",
   "private": true,

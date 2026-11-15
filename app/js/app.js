@@ -1,34 +1,42 @@
-/* Custom Launcher – Apple-TV-style home screen for webOS (plain ES2015, no build step). */
+/* Custom Launcher – tvOS-style home screen for webOS (plain ES2015, no build step). */
 (function () {
   'use strict';
 
   var SELF = 'io.github.swenz.customlauncher';
   var APP_DIR = '/media/developer/apps/usr/palm/applications/' + SELF;
+  var CONF_DIR = '/var/lib/webosbrew/customlauncher';
   var INIT_SCRIPT = '/var/lib/webosbrew/init.d/50-customlauncher';
-  var PITCH = 340;        // tile width + gap
-  var MAX_SLOT = 4;       // focused tile never moves past the 5th visible slot
-  var ROW_H = 304;
-  var ROWS_TOP = 118;
+  var HOME_BIN = '/usr/bin/com.webos.app.home';
+
+  // layout on the 1920x1080 canvas (proportions taken from the tvOS home screen)
+  var COLS = 6, TILE_W = 252, TILE_H = 151, PITCH_X = 298, PITCH_Y = 262, MARGIN_X = 89;
+  var SHELF_Y = 800;      // grid top while the dock (first row) is focused
+  var GRID_Y = 100;       // grid top once you move below the dock
+  var HOLD_MS = 550;      // long press on OK starts moving a tile
 
   var lang = (navigator.language || 'en').slice(0, 2) === 'de' ? 'de' : 'en';
   var STR = {
     de: {
-      apps: 'Apps', sources: 'Quellen', system: 'System', liveTv: 'Live TV', settings: 'Launcher-Einstellungen',
+      liveTv: 'Live TV', settings: 'Launcher-Einstellungen',
       on: 'An', off: 'Aus', na: 'n. v.',
-      autostart: 'Autostart', autostartDesc: 'Launcher nach dem Einschalten und Aufwachen öffnen',
-      homeAuto: 'LG Home Auto Launch', homeAutoDesc: 'Für den Launcher „Aus“ – sonst legt sich LG Home darüber',
-      showSystem: 'System-Apps anzeigen', showSystemDesc: 'Reihe mit vorinstallierten LG-Apps',
+      replaceHome: 'LG Home ersetzen', replaceHomeDesc: 'Home-Taste öffnet diesen Launcher statt des LG-Startbildschirms',
+      homeAuto: 'Beim Einschalten öffnen', homeAutoDesc: 'LG-Option „Home Auto Launch“ – zeigt den Startbildschirm nach dem Einschalten',
+      showSystem: 'System-Apps anzeigen', showSystemDesc: 'Vorinstallierte LG-Apps im Raster zeigen',
+      resetOrder: 'Sortierung zurücksetzen', resetOrderDesc: 'Standard-Reihenfolge wiederherstellen', reset: 'Zurücksetzen',
       hint: 'OK = umschalten   ·   Zurück = schließen',
+      moveHint: 'Pfeiltasten: verschieben   ·   OK: fertig',
       launchFail: 'Start fehlgeschlagen: ', needRoot: 'Homebrew-Channel-Dienst nicht erreichbar (Root nötig)',
       listFail: 'App-Liste konnte nicht geladen werden'
     },
     en: {
-      apps: 'Apps', sources: 'Inputs', system: 'System', liveTv: 'Live TV', settings: 'Launcher Settings',
+      liveTv: 'Live TV', settings: 'Launcher Settings',
       on: 'On', off: 'Off', na: 'n/a',
-      autostart: 'Autostart', autostartDesc: 'Open the launcher after power-on and wake-up',
-      homeAuto: 'LG Home Auto Launch', homeAutoDesc: 'Keep “Off” – otherwise LG Home covers the launcher',
-      showSystem: 'Show system apps', showSystemDesc: 'Row with preinstalled LG apps',
+      replaceHome: 'Replace LG Home', replaceHomeDesc: 'The Home button opens this launcher instead of the LG home screen',
+      homeAuto: 'Open at power-on', homeAutoDesc: 'LG option “Home Auto Launch” – shows the home screen after power-on',
+      showSystem: 'Show system apps', showSystemDesc: 'Show preinstalled LG apps in the grid',
+      resetOrder: 'Reset order', resetOrderDesc: 'Restore the default arrangement', reset: 'Reset',
       hint: 'OK = toggle   ·   Back = close',
+      moveHint: 'Arrow keys: move   ·   OK: done',
       launchFail: 'Launch failed: ', needRoot: 'Homebrew Channel service not reachable (root required)',
       listFail: 'Could not load the app list'
     }
@@ -42,7 +50,7 @@
   };
 
   var $ = function (id) { return document.getElementById(id); };
-  var stage = $('stage'), rowsEl = $('rows');
+  var stage = $('stage'), gridEl = $('grid');
 
   var store = {
     get: function (k, def) {
@@ -52,9 +60,9 @@
   };
 
   var prefs = store.get('prefs', { showSystem: true });
-  var rows = [];            // [{key,title,items,offset,el,track,tiles}]
-  var focus = { r: 0, c: 0 };
-  var mode = 'home';
+  var items = [];           // ordered tiles: [{key, kind, id, title, icon, color, el, ...}]
+  var focus = -1;           // index into items
+  var mode = 'home';        // home | move | settings
   var dataSig = '';
 
   /* ------------------------------------------------------------------ data */
@@ -89,6 +97,7 @@
     };
   }
 
+  /* One flat list like tvOS: apps, then inputs, then system apps; the user's own order wins. */
   function buildModel(data) {
     var seen = {};
     var pts = data.points.filter(function (p) {
@@ -96,28 +105,25 @@
       seen[p.launchPointId || p.id] = 1;
       return true;
     });
-    var apps = pts.filter(function (p) { return !p.systemApp; }).map(appItem);
-    var system = pts.filter(function (p) { return p.systemApp; }).map(appItem);
+    var list = pts.filter(function (p) { return !p.systemApp; }).map(appItem);
 
-    var sources = [{ key: 'tv', kind: 'tv', id: 'com.webos.app.livetv', title: T.liveTv, color: '#2c56c9', port: 'TV' }];
+    list.push({ key: 'tv', kind: 'tv', id: 'com.webos.app.livetv', title: T.liveTv, color: '#2c56c9', port: 'TV' });
     data.inputs.forEach(function (d) {
       var port = String(d.id || '').replace('_', ' ');
-      sources.push({
+      list.push({
         key: 'in:' + d.id, kind: 'input', id: d.appId, title: d.label || port, color: '#3d4150',
         port: port, plugged: d.hdmiPlugIn !== false
       });
     });
+    if (prefs.showSystem) { list = list.concat(pts.filter(function (p) { return p.systemApp; }).map(appItem)); }
+    list.push({ key: 'settings', kind: 'settings', title: T.settings, color: '#5a5b64' });
 
-    var settings = { key: 'settings', kind: 'settings', title: T.settings, color: '#5a5b64' };
-    var model = [];
-    if (apps.length) { model.push({ key: 'apps', title: T.apps, items: apps }); }
-    model.push({ key: 'sources', title: T.sources, items: sources });
-    if (prefs.showSystem && system.length) {
-      model.push({ key: 'system', title: T.system, items: system.concat([settings]) });
-    } else {
-      sources.push(settings);
-    }
-    return model;
+    var order = store.get('order', []);
+    var rank = {};
+    order.forEach(function (k, i) { rank[k] = i; });
+    list.forEach(function (it, i) { it._rank = rank[it.key] !== undefined ? rank[it.key] : order.length + i; });
+    list.sort(function (a, b) { return a._rank - b._rank; });
+    return list;
   }
 
   /* ----------------------------------------------------------------- icons */
@@ -206,7 +212,7 @@
     if (color && color !== item.color) {
       item.color = color;
       card.style.backgroundColor = color;
-      if (currentItem() === item) { setAmbient(color); }
+      if (items[focus] === item) { setAmbient(color); }
     }
   }
 
@@ -235,58 +241,51 @@
 
   /* ---------------------------------------------------------------- render */
 
-  function render(model) {
-    var prevKey = currentItem() ? currentItem().key : null;
-    rowsEl.innerHTML = '';
-    rows = model.map(function (m, r) {
-      var el = document.createElement('section');
-      el.className = 'row';
-      var h = document.createElement('h3');
-      h.textContent = m.title;
-      var track = document.createElement('div');
-      track.className = 'track';
-      var tiles = m.items.map(function (item, c) {
-        var tile = document.createElement('div');
-        tile.className = 'tile' + (item.kind === 'input' && !item.plugged ? ' unplugged' : '');
-        tile._pos = { r: r, c: c };
-        var card = document.createElement('div');
-        card.className = 'card';
-        card.style.backgroundColor = item.color;
-        var fill = document.createElement('div'); fill.className = 'fill';
-        var art = document.createElement('div'); art.className = 'art';
-        var shine = document.createElement('div'); shine.className = 'shine';
-        if (item.kind === 'app') {
-          attachIcon(art, item);
-        } else {
-          art.innerHTML = SVG[item.kind === 'settings' ? 'gear' : item.kind === 'tv' ? 'tv' : 'hdmi'] +
-            (item.port ? '<span class="port"></span>' : '');
-          if (item.port) { art.lastChild.textContent = item.port; }
-        }
-        card.appendChild(art); card.appendChild(fill); card.appendChild(shine);
-        var label = document.createElement('div');
-        label.className = 'label';
-        label.textContent = item.title;
-        tile.appendChild(card); tile.appendChild(label);
-        track.appendChild(tile);
-        return tile;
-      });
-      el.appendChild(h); el.appendChild(track);
-      rowsEl.appendChild(el);
-      return { key: m.key, items: m.items, offset: 0, el: el, track: track, tiles: tiles };
-    });
-
-    // restore focus on the same item if it still exists
-    var pos = { r: 0, c: 0 };
-    rows.forEach(function (row, r) {
-      row.items.forEach(function (it, c) { if (it.key === prevKey) { pos = { r: r, c: c }; } });
-    });
-    focus = { r: -1, c: -1 };
-    setFocus(pos.r, pos.c, { instant: true });
+  function makeTile(item) {
+    var tile = document.createElement('div');
+    tile.className = 'tile' + (item.kind === 'input' && !item.plugged ? ' unplugged' : '');
+    tile._item = item;
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.style.backgroundColor = item.color;
+    var art = document.createElement('div'); art.className = 'art';
+    var fill = document.createElement('div'); fill.className = 'fill';
+    var shine = document.createElement('div'); shine.className = 'shine';
+    if (item.kind === 'app') {
+      attachIcon(art, item);
+    } else {
+      art.innerHTML = SVG[item.kind === 'settings' ? 'gear' : item.kind === 'tv' ? 'tv' : 'hdmi'] +
+        (item.port ? '<span class="port"></span>' : '');
+      if (item.port) { art.lastChild.textContent = item.port; }
+    }
+    card.appendChild(art); card.appendChild(fill); card.appendChild(shine);
+    var label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = item.title;
+    tile.appendChild(card); tile.appendChild(label);
+    item.el = tile;
+    return tile;
   }
 
-  function currentItem() {
-    var row = rows[focus.r];
-    return row ? row.items[focus.c] : null;
+  /* Tiles are absolutely positioned by index, so re-ordering animates by itself. */
+  function layout() {
+    items.forEach(function (it, i) {
+      var x = MARGIN_X + (i % COLS) * PITCH_X;
+      var y = Math.floor(i / COLS) * PITCH_Y;
+      it.el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
+    });
+  }
+
+  function render(model) {
+    var prevKey = items[focus] ? items[focus].key : null;
+    gridEl.innerHTML = '<div id="dock"></div>';
+    items = model;
+    items.forEach(function (it) { gridEl.appendChild(makeTile(it)); });
+    layout();
+    var idx = 0;
+    items.forEach(function (it, i) { if (it.key === prevKey) { idx = i; } });
+    focus = -1;
+    setFocus(idx, { instant: true });
   }
 
   /* ----------------------------------------------------------------- focus */
@@ -310,52 +309,46 @@
     var s = tile.style;
     s.setProperty('--ry', (x * 9).toFixed(2) + 'deg');
     s.setProperty('--rx', (-y * 7).toFixed(2) + 'deg');
-    s.setProperty('--px', (x * 9).toFixed(1) + 'px');
-    s.setProperty('--py', (y * 6).toFixed(1) + 'px');
-    s.setProperty('--sx', (x * 70).toFixed(1) + 'px');
-    s.setProperty('--sy', (y * 40).toFixed(1) + 'px');
+    s.setProperty('--px', (x * 8).toFixed(1) + 'px');
+    s.setProperty('--py', (y * 5).toFixed(1) + 'px');
+    s.setProperty('--sx', (x * 60).toFixed(1) + 'px');
+    s.setProperty('--sy', (y * 34).toFixed(1) + 'px');
   }
 
   var nudgeTimer = null;
 
-  function scrollRow(row, c, instant) {
-    var slot = c * PITCH - row.offset;
-    if (slot > MAX_SLOT * PITCH) { row.offset = (c - MAX_SLOT) * PITCH; }
-    else if (slot < 0) { row.offset = c * PITCH; }
-    applyRowOffset(row, instant);
+  /* Row 0 is the dock: it sits at the bottom of the screen over the wallpaper.
+   * Moving below it slides the whole grid up, like the tvOS home screen. */
+  function scrollGrid() {
+    var r = Math.floor(focus / COLS);
+    var y;
+    if (r === 0 && mode !== 'move') {
+      y = SHELF_Y;
+      stage.classList.remove('scrolled');
+    } else {
+      var overflow = GRID_Y + r * PITCH_Y + TILE_H + 90 - 1080;
+      y = GRID_Y - Math.max(0, overflow);
+      stage.classList.add('scrolled');
+    }
+    gridEl.style.transform = 'translate3d(0,' + y + 'px,0)';
   }
 
-  function applyRowOffset(row, instant) {
-    var max = Math.max(0, (row.items.length - MAX_SLOT - 1) * PITCH);
-    row.offset = Math.max(0, Math.min(row.offset, max));
-    if (instant) { row.track.style.transition = 'none'; }
-    row.track.style.transform = 'translate3d(' + (-row.offset) + 'px,0,0)';
-    if (instant) { void row.track.offsetWidth; row.track.style.transition = ''; }
-  }
-
-  function scrollRows(r) {
-    var bottom = ROWS_TOP + (r + 1) * ROW_H + 26;
-    var y = Math.max(0, bottom - 1080);
-    rowsEl.style.transform = 'translate3d(0,' + (-y) + 'px,0)';
-  }
-
-  function setFocus(r, c, opts) {
+  function setFocus(i, opts) {
     opts = opts || {};
-    if (!rows.length) { return; }
-    r = Math.max(0, Math.min(r, rows.length - 1));
-    var row = rows[r];
-    c = Math.max(0, Math.min(c, row.items.length - 1));
-    if (r === focus.r && c === focus.c) { return; }
+    if (!items.length) { return; }
+    i = Math.max(0, Math.min(i, items.length - 1));
+    if (i === focus) { return; }
 
-    var old = rows[focus.r] && rows[focus.r].tiles[focus.c];
+    var old = items[focus] && items[focus].el;
     if (old) { old.classList.remove('focus', 'live', 'pressed'); setTilt(old, 0, 0); }
-    if (rows[focus.r] && focus.r !== r) { rows[focus.r].el.classList.remove('active'); }
 
-    var dx = r === focus.r ? Math.sign(c - focus.c) : 0;
-    var dy = focus.r >= 0 ? Math.sign(r - focus.r) : 0;
-    focus = { r: r, c: c };
-    var tile = row.tiles[c];
-    row.el.classList.add('active');
+    var dx = 0, dy = 0;
+    if (focus >= 0) {
+      dy = Math.sign(Math.floor(i / COLS) - Math.floor(focus / COLS));
+      dx = dy ? 0 : Math.sign(i - focus);
+    }
+    focus = i;
+    var tile = items[i].el;
 
     // D-pad parallax: the tile swings in the direction of travel, then settles
     clearTimeout(nudgeTimer);
@@ -366,37 +359,73 @@
       setTilt(tile, 0, 0);
     }
     tile.classList.add('focus');
-
-    if (!opts.pointer) { scrollRow(row, c, opts.instant); }
-    scrollRows(r);
-    setAmbient(row.items[c].color);
+    scrollGrid();
+    setAmbient(items[i].color);
   }
 
-  function move(dx, dy) {
-    if (dx) { setFocus(focus.r, focus.c + dx); return; }
-    var nr = focus.r + dy;
-    if (nr < 0 || nr >= rows.length) { return; }
-    // keep the on-screen column when changing rows
-    var slotX = focus.c * PITCH - rows[focus.r].offset;
-    var nc = Math.round((slotX + rows[nr].offset) / PITCH);
-    setFocus(nr, nc);
+  function neighbour(dx, dy) {
+    var col = focus % COLS;
+    if (dx) {
+      var c = col + dx;
+      return (c < 0 || c >= COLS || focus + dx >= items.length) ? focus : focus + dx;
+    }
+    var t = focus + dy * COLS;
+    if (t < 0) { return focus; }
+    if (t >= items.length) {
+      // last row is shorter: land on its last tile if there is a row below at all
+      return Math.floor((items.length - 1) / COLS) > Math.floor(focus / COLS) ? items.length - 1 : focus;
+    }
+    return t;
   }
 
-  /* ---------------------------------------------------------------- launch */
+  function move(dx, dy) { setFocus(neighbour(dx, dy)); }
+
+  /* ------------------------------------------------------------ reordering */
 
   var toastTimer = null;
-  function toast(msg) {
+  function toast(msg, ms) {
     var el = $('toast');
     el.textContent = msg;
     el.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { el.classList.remove('show'); }, 3500);
+    toastTimer = setTimeout(function () { el.classList.remove('show'); }, ms || 3500);
   }
 
+  function startMove() {
+    if (mode !== 'home' || focus < 0) { return; }
+    mode = 'move';
+    stage.classList.add('moving');
+    items[focus].el.classList.add('moving');
+    scrollGrid();
+    toast(T.moveHint, 6000);
+  }
+
+  function carry(dx, dy) {
+    var to = neighbour(dx, dy);
+    if (to === focus) { return; }
+    var it = items.splice(focus, 1)[0];
+    items.splice(to, 0, it);
+    focus = to;
+    layout();
+    scrollGrid();
+  }
+
+  function endMove() {
+    if (mode !== 'move') { return; }
+    mode = 'home';
+    stage.classList.remove('moving');
+    items[focus].el.classList.remove('moving');
+    store.set('order', items.map(function (it) { return it.key; }));
+    $('toast').classList.remove('show');
+    scrollGrid();
+  }
+
+  /* ---------------------------------------------------------------- launch */
+
   function activate() {
-    var item = currentItem();
+    var item = items[focus];
     if (!item) { return; }
-    var tile = rows[focus.r].tiles[focus.c];
+    var tile = item.el;
     tile.classList.add('pressed');
     setTimeout(function () { tile.classList.remove('pressed'); }, 160);
 
@@ -416,22 +445,22 @@
 
   /* -------------------------------------------------------------- settings */
 
+  var INSTALL_HOOK = 'mkdir -p ' + CONF_DIR + ' /var/lib/webosbrew/init.d' +
+    ' && cp ' + APP_DIR + '/home-stub.sh ' + CONF_DIR + '/home-stub' +
+    ' && cp ' + APP_DIR + '/boot-hook.sh ' + INIT_SCRIPT +
+    ' && chmod 755 ' + CONF_DIR + '/home-stub ' + INIT_SCRIPT +
+    ' && ' + INIT_SCRIPT + ' --no-boot-launch';
+  var REMOVE_HOOK = '[ -x ' + INIT_SCRIPT + ' ] && ' + INIT_SCRIPT + ' --stop; rm -rf ' + INIT_SCRIPT + ' ' + CONF_DIR;
+
   var optIndex = 0;
   var opts = [
     {
-      label: T.autostart, desc: T.autostartDesc, value: null,
+      label: T.replaceHome, desc: T.replaceHomeDesc, value: null,
       read: function () {
-        return Luna.exec('test -x ' + INIT_SCRIPT + ' && echo yes || echo no').then(function (r) {
-          return /yes/.test(r.stdoutString);
-        });
+        return Luna.exec('test -x ' + INIT_SCRIPT + ' && grep -q " ' + HOME_BIN + ' " /proc/mounts && echo yes || echo no')
+          .then(function (r) { return /yes/.test(r.stdoutString); });
       },
-      write: function (on) {
-        var cmd = on
-          ? 'mkdir -p /var/lib/webosbrew/init.d && cp ' + APP_DIR + '/autostart.sh ' + INIT_SCRIPT + ' && chmod 755 ' + INIT_SCRIPT +
-            ' && ' + INIT_SCRIPT + ' --no-boot-launch; echo done'
-          : '[ -x ' + INIT_SCRIPT + ' ] && ' + INIT_SCRIPT + ' --stop; rm -f ' + INIT_SCRIPT + '; echo done';
-        return Luna.exec(cmd);
-      }
+      write: function (on) { return Luna.exec((on ? INSTALL_HOOK : REMOVE_HOOK) + '; echo done'); }
     },
     {
       label: T.homeAuto, desc: T.homeAutoDesc, value: null,
@@ -445,10 +474,18 @@
       }
     },
     {
-      label: T.showSystem, desc: T.showSystemDesc, value: null,
+      label: T.showSystem, desc: T.showSystemDesc, value: null, local: true,
       read: function () { return Promise.resolve(!!prefs.showSystem); },
       write: function (on) {
         prefs.showSystem = on; store.set('prefs', prefs); dataSig = ''; refresh();
+        return Promise.resolve();
+      }
+    },
+    {
+      label: T.resetOrder, desc: T.resetOrderDesc, value: null, local: true, action: T.reset,
+      read: function () { return Promise.resolve(true); },
+      write: function () {
+        store.set('order', []); dataSig = ''; refresh();
         return Promise.resolve();
       }
     }
@@ -470,7 +507,7 @@
       left.appendChild(small);
       var val = document.createElement('div');
       val.className = 'val';
-      val.textContent = o.value === null ? '…' : o.value === undefined ? T.na : o.value ? T.on : T.off;
+      val.textContent = o.action || (o.value === null ? '…' : o.value === undefined ? T.na : o.value ? T.on : T.off);
       el.appendChild(left); el.appendChild(val);
       list.appendChild(el);
     });
@@ -486,8 +523,10 @@
     opts.forEach(function (o) { o.value = null; });
     renderSettings();
     $('settings').classList.remove('hidden');
-    if (Luna.available) { opts.forEach(readOption); }
-    else { opts.forEach(function (o) { o.value = undefined; }); readOption(opts[2]); }
+    opts.forEach(function (o) {
+      if (Luna.available || o.local) { readOption(o); } else { o.value = undefined; }
+    });
+    renderSettings();
   }
 
   function closeSettings() {
@@ -507,34 +546,71 @@
     });
   }
 
+  /* After an app update the installed hook may be outdated: refresh it silently. */
+  function syncHook() {
+    if (!Luna.available) { return; }
+    Luna.exec('if [ -x ' + INIT_SCRIPT + ' ]; then cmp -s ' + APP_DIR + '/boot-hook.sh ' + INIT_SCRIPT +
+      ' && cmp -s ' + APP_DIR + '/home-stub.sh ' + CONF_DIR + '/home-stub || { ' + INIT_SCRIPT + ' --stop; ' + INSTALL_HOOK + '; }; fi; echo ok')
+      .catch(function () {});
+  }
+
   /* ----------------------------------------------------------------- input */
 
   var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 461, ESC: 27, BKSP: 8 };
+  var okTimer = null, okDown = false, okConsumed = false;
+
+  function arrows(k) {
+    return k === KEY.LEFT ? [-1, 0] : k === KEY.RIGHT ? [1, 0] : k === KEY.UP ? [0, -1] : k === KEY.DOWN ? [0, 1] : null;
+  }
 
   document.addEventListener('keydown', function (e) {
     var k = e.keyCode;
+    var isBack = k === KEY.BACK || k === KEY.ESC || k === KEY.BKSP;
+    var dir = arrows(k);
+
     if (mode === 'settings') {
       if (k === KEY.UP) { optIndex = Math.max(0, optIndex - 1); renderSettings(); }
       else if (k === KEY.DOWN) { optIndex = Math.min(opts.length - 1, optIndex + 1); renderSettings(); }
-      else if (k === KEY.OK) { toggleOption(); }
-      else if (k === KEY.BACK || k === KEY.ESC || k === KEY.BKSP) { closeSettings(); }
+      else if (k === KEY.OK) { if (!e.repeat) { toggleOption(); } }
+      else if (isBack) { closeSettings(); }
       else { return; }
       e.preventDefault();
       return;
     }
-    if (k === KEY.LEFT) { move(-1, 0); }
-    else if (k === KEY.RIGHT) { move(1, 0); }
-    else if (k === KEY.UP) { move(0, -1); }
-    else if (k === KEY.DOWN) { move(0, 1); }
-    else if (k === KEY.OK) { activate(); }
-    else if (k === KEY.BACK || k === KEY.ESC || k === KEY.BKSP) { setFocus(0, 0); }   // a launcher has nowhere to go back to
+
+    if (mode === 'move') {
+      if (dir) { carry(dir[0], dir[1]); }
+      else if (k === KEY.OK) { if (!e.repeat && !okDown) { okDown = true; okConsumed = true; endMove(); } }
+      else if (isBack) { endMove(); }
+      else { return; }
+      e.preventDefault();
+      return;
+    }
+
+    if (dir) { move(dir[0], dir[1]); }
+    else if (k === KEY.OK) {
+      // short press launches (on key-up), holding the key picks the tile up
+      if (!okDown) {
+        okDown = true; okConsumed = false;
+        okTimer = setTimeout(function () { okConsumed = true; startMove(); }, HOLD_MS);
+      }
+    }
+    else if (isBack) { setFocus(0); }   // a launcher has nowhere to go back to
     else { return; }
     e.preventDefault();
   });
 
+  document.addEventListener('keyup', function (e) {
+    if (e.keyCode !== KEY.OK) { return; }
+    clearTimeout(okTimer);
+    var fire = okDown && !okConsumed && mode === 'home';
+    okDown = false;
+    if (fire) { activate(); }
+  });
+
   function tileOf(target) {
     while (target && target !== document) {
-      if (target._pos) { return target; }
+      if (target._item) { return target; }
       target = target.parentNode;
     }
     return null;
@@ -545,8 +621,13 @@
     if (mode !== 'home') { return; }
     var tile = tileOf(e.target);
     if (!tile) { return; }
-    var p = tile._pos;
-    if (p.r !== focus.r || p.c !== focus.c) { setFocus(p.r, p.c, { pointer: true }); }
+    var i = items.indexOf(tile._item);
+    if (i !== focus) {
+      // hovering must not make the grid jump between dock and grid position
+      var sameZone = (Math.floor(i / COLS) === 0) === (Math.floor(focus / COLS) === 0);
+      if (!sameZone) { return; }
+      setFocus(i, { pointer: true });
+    }
     var rect = tile.firstChild.getBoundingClientRect();
     var x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     var y = ((e.clientY - rect.top) / rect.height) * 2 - 1;
@@ -560,7 +641,21 @@
     if (tile && !tileOf(e.relatedTarget)) { tile.classList.remove('live'); setTilt(tile, 0, 0); }
   });
 
+  var pressTimer = null, longPressed = false;
+  document.addEventListener('mousedown', function (e) {
+    var tile = tileOf(e.target);
+    longPressed = false;
+    if (mode !== 'home' || !tile) { return; }
+    pressTimer = setTimeout(function () {
+      longPressed = true;
+      setFocus(items.indexOf(tile._item), { pointer: true });
+      startMove();
+    }, HOLD_MS);
+  });
+  document.addEventListener('mouseup', function () { clearTimeout(pressTimer); });
+
   document.addEventListener('click', function (e) {
+    if (longPressed) { longPressed = false; return; }
     if (mode === 'settings') {
       var t = e.target;
       while (t && t !== document && t._opt === undefined) { t = t.parentNode; }
@@ -568,26 +663,26 @@
       else if (e.target === $('settings')) { closeSettings(); }
       return;
     }
+    if (mode === 'move') { endMove(); return; }
     var tile = tileOf(e.target);
     if (!tile) { return; }
-    setFocus(tile._pos.r, tile._pos.c, { pointer: true });
+    setFocus(items.indexOf(tile._item), { pointer: true });
     activate();
   });
 
-  // Magic Remote wheel scrolls the hovered row sideways
+  // Magic Remote wheel moves a row up or down
+  var wheelLock = 0;
   document.addEventListener('wheel', function (e) {
-    if (mode !== 'home') { return; }
-    var tile = tileOf(e.target);
-    var row = rows[tile ? tile._pos.r : focus.r];
-    if (!row) { return; }
-    row.offset += (e.deltaY > 0 || e.deltaX > 0 ? 1 : -1) * PITCH;
-    applyRowOffset(row);
     e.preventDefault();
+    if (mode !== 'home' || Date.now() < wheelLock) { return; }
+    wheelLock = Date.now() + 180;
+    move(0, e.deltaY > 0 ? 1 : -1);
   }, { passive: false });
 
   /* ------------------------------------------------------------- lifecycle */
 
   function refresh() {
+    if (mode === 'move') { return Promise.resolve(); }
     return loadData().then(function (data) {
       store.set('data', data);
       var sig = JSON.stringify(data) + '|' + prefs.showSystem;
@@ -595,15 +690,13 @@
       dataSig = sig;
       render(buildModel(data));
     }, function () {
-      if (!rows.length) { render(buildModel({ points: [], inputs: defaultInputs() })); }
+      if (!items.length) { render(buildModel({ points: [], inputs: defaultInputs() })); }
       toast(T.listFail);
     });
   }
 
   function tick() {
-    var d = new Date();
-    $('time').textContent = d.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
-    $('date').textContent = d.toLocaleDateString(lang, { weekday: 'long', day: 'numeric', month: 'long' });
+    $('time').textContent = new Date().toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
   }
 
   function enter() {
@@ -622,9 +715,13 @@
     if (!document.hidden) { enter(); tick(); refresh(); }
   });
   document.addEventListener('webOSRelaunch', function () {
+    // Home button while the launcher is already showing: back to the first tile
+    var wasVisible = !document.hidden;
     if (mode === 'settings') { closeSettings(); }
+    if (mode === 'move') { endMove(); }
     try { if (window.PalmSystem && PalmSystem.activate) { PalmSystem.activate(); } } catch (e) {}
-    enter(); refresh();
+    if (wasVisible) { setFocus(0); } else { enter(); }
+    refresh();
   });
   window.addEventListener('resize', fit);
 
@@ -640,4 +737,5 @@
   }
   enter();
   refresh();
+  syncHook();
 })();
