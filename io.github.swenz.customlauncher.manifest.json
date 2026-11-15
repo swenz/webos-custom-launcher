@@ -1,14 +1,14 @@
 {
   "id": "io.github.swenz.customlauncher",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "web",
   "title": "Custom Launcher",
   "appDescription": "Apple-TV-style home screen for rooted LG webOS TVs",
   "iconUri": "https://github.com/swenz/webos-custom-launcher/raw/main/app/largeIcon.png",
   "sourceUrl": "https://github.com/swenz/webos-custom-launcher",
   "rootRequired": true,
-  "ipkUrl": "https://github.com/swenz/webos-custom-launcher/releases/download/v1.1.0/io.github.swenz.customlauncher_1.1.0_all.ipk",
+  "ipkUrl": "https://github.com/swenz/webos-custom-launcher/releases/download/v1.2.0/io.github.swenz.customlauncher_1.2.0_all.ipk",
   "ipkHash": {
-    "sha256": "29deb226adc46110d26494b64a153e7a07fd18b58a9eb66f72b8f4dfeee697ee"
+    "sha256": "6af48a2fcd2e23cc7d6484b195efc4d985a57dd015fc80bbe21ec2ede4c912e0"
   }
 }

@@ -4,11 +4,9 @@ Ein eigener Startbildschirm im Stil von tvOS für **gerootete LG-webOS-TVs** mit
 
 *A tvOS-style home screen for rooted LG webOS TVs: app grid with a dock, focus zoom with parallax tilt, re-orderable tiles, D-pad and Magic Remote navigation. It can replace LG Home so the Home button opens the launcher.*
 
-![Dock vor dem Hintergrund](docs/screenshot.jpg)
+![Dock und Statusleiste](docs/screenshot.jpg)
 
-| Raster | Sortieren |
-| --- | --- |
-| ![Raster](docs/screenshot-grid.jpg) | ![Kachel verschieben](docs/screenshot-move.jpg) |
+![Raster](docs/screenshot-grid.jpg)
 
 ## Funktionen
 
@@ -16,6 +14,8 @@ Ein eigener Startbildschirm im Stil von tvOS für **gerootete LG-webOS-TVs** mit
 - **Alles im selben Raster**: installierte Apps (aus `luna://com.webos.applicationManager/listLaunchPoints`, mit Original-Icons), Live TV, HDMI 1–4 (Namen und Anschluss-Status kommen vom TV) und die System-Apps.
 - **Sortierbar**: OK gedrückt halten, bis die Kachel wackelt, mit den Pfeiltasten verschieben, OK zum Ablegen. Die ersten sechs Kacheln bilden das Dock. Die Reihenfolge bleibt gespeichert.
 - **Fokus-Effekt**: Kachel skaliert, kippt beim Navigieren in Bewegungsrichtung (mit der Magic Remote folgt sie dem Zeiger), Glanzlicht und tiefer Schatten; der Hintergrund nimmt die Farbe der fokussierten Kachel an.
+- **Hintergrund passend zur App**: Liefert die fokussierte App ein eigenes Hintergrundbild mit (`bgImage`, z. B. Netflix, Disney+, WOW), füllt es den Bildschirm – ähnlich dem Top Shelf von tvOS. Was in der App gerade läuft, geben die Apps nicht preis; mehr als ihr mitgeliefertes Bild ist deshalb nicht möglich.
+- **Statusleiste** oben rechts, immer sichtbar: Netzwerk, Ton an/stumm, Sleep-Timer, Bildschirm aus, TV-Einstellungen, Ausschalten und die Uhrzeit. Vom Dock aus mit „hoch“ erreichbar, mit „runter“ oder Zurück geht es zurück.
 - **LG Home ersetzen**: Die Home-Taste öffnet den Launcher statt des LG-Startbildschirms, auch aus anderen Apps heraus.
 - **Bedienung**: Pfeiltasten, OK, Zurück, Home; Magic Remote mit Zeiger, Klick, langem Klick und Scrollrad.
 - Kein Build-Schritt: reines HTML/CSS/JS, IPK ca. 30 kB.
@@ -27,20 +27,20 @@ Ein eigener Startbildschirm im Stil von tvOS für **gerootete LG-webOS-TVs** mit
 
 ## Installation
 
-IPK aus den [Releases](https://github.com/swenz/webos-custom-launcher/releases) laden: `io.github.swenz.customlauncher_1.1.0_all.ipk`.
+IPK aus den [Releases](https://github.com/swenz/webos-custom-launcher/releases) laden: `io.github.swenz.customlauncher_1.2.0_all.ipk`.
 
 **Variante A – webOS Dev Manager** ([Download](https://github.com/webosbrew/dev-manager-desktop)): TV verbinden, *Apps → Install* und die IPK auswählen.
 
 **Variante B – webOS CLI** (`npm i -g @webos-tools/cli`, TV einmalig mit `ares-setup-device` einrichten):
 
 ```bash
-ares-install -d <gerät> io.github.swenz.customlauncher_1.1.0_all.ipk
+ares-install -d <gerät> io.github.swenz.customlauncher_1.2.0_all.ipk
 ```
 
 **Variante C – direkt auf dem TV** (SSH oder Telnet als root):
 
 ```bash
-cd /tmp && wget -O cl.ipk https://github.com/swenz/webos-custom-launcher/releases/download/v1.1.0/io.github.swenz.customlauncher_1.1.0_all.ipk
+cd /tmp && wget -O cl.ipk https://github.com/swenz/webos-custom-launcher/releases/download/v1.2.0/io.github.swenz.customlauncher_1.2.0_all.ipk
 luna-send -i -f luna://com.webos.appInstallService/dev/install '{"id":"io.github.swenz.customlauncher","ipkUrl":"/tmp/cl.ipk","subscribe":true}'
 ```
 
@@ -97,16 +97,16 @@ Das erzeugt `dist/io.github.swenz.customlauncher_<version>_all.ipk` und aktualis
 ```json
 {
   "id": "io.github.swenz.customlauncher",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "web",
   "title": "Custom Launcher",
   "appDescription": "Apple-TV-style home screen for rooted LG webOS TVs",
   "iconUri": "https://github.com/swenz/webos-custom-launcher/raw/main/app/largeIcon.png",
   "sourceUrl": "https://github.com/swenz/webos-custom-launcher",
   "rootRequired": true,
-  "ipkUrl": "https://github.com/swenz/webos-custom-launcher/releases/download/v1.1.0/io.github.swenz.customlauncher_1.1.0_all.ipk",
+  "ipkUrl": "https://github.com/swenz/webos-custom-launcher/releases/download/v1.2.0/io.github.swenz.customlauncher_1.2.0_all.ipk",
   "ipkHash": {
-    "sha256": "29deb226adc46110d26494b64a153e7a07fd18b58a9eb66f72b8f4dfeee697ee"
+    "sha256": "6af48a2fcd2e23cc7d6484b195efc4d985a57dd015fc80bbe21ec2ede4c912e0"
   }
 }
 ```

@@ -10,8 +10,8 @@
 
   // layout on the 1920x1080 canvas (proportions taken from the tvOS home screen)
   var COLS = 6, TILE_W = 252, TILE_H = 151, PITCH_X = 298, PITCH_Y = 262, MARGIN_X = 89;
-  var SHELF_Y = 800;      // grid top while the dock (first row) is focused
-  var GRID_Y = 100;       // grid top once you move below the dock
+  var SHELF_Y = 745;      // grid top while the dock (first row) is focused
+  var GRID_Y = 190;       // grid top once you move below the dock (leaves room for the status bar)
   var HOLD_MS = 550;      // long press on OK starts moving a tile
 
   var lang = (navigator.language || 'en').slice(0, 2) === 'de' ? 'de' : 'en';
@@ -25,6 +25,9 @@
       resetOrder: 'Sortierung zurücksetzen', resetOrderDesc: 'Standard-Reihenfolge wiederherstellen', reset: 'Zurücksetzen',
       hint: 'OK = umschalten   ·   Zurück = schließen',
       moveHint: 'Pfeiltasten: verschieben   ·   OK: fertig',
+      ccPower: 'Ausschalten', ccNet: 'Netzwerk', ccWifi: 'WLAN', ccLan: 'LAN', ccOffline: 'Nicht verbunden',
+      ccScreen: 'Bildschirm aus', ccSettings: 'TV-Einstellungen', ccSound: 'Ton an', ccMuted: 'Stumm', ccVolume: 'Lautstärke ',
+      ccSleep: 'Sleep-Timer', ccMin: ' Min.', ccScreenHint: 'Beliebige Taste schaltet den Bildschirm wieder ein',
       launchFail: 'Start fehlgeschlagen: ', needRoot: 'Homebrew-Channel-Dienst nicht erreichbar (Root nötig)',
       listFail: 'App-Liste konnte nicht geladen werden'
     },
@@ -37,6 +40,9 @@
       resetOrder: 'Reset order', resetOrderDesc: 'Restore the default arrangement', reset: 'Reset',
       hint: 'OK = toggle   ·   Back = close',
       moveHint: 'Arrow keys: move   ·   OK: done',
+      ccPower: 'Power Off', ccNet: 'Network', ccWifi: 'Wi-Fi', ccLan: 'LAN', ccOffline: 'Not connected',
+      ccScreen: 'Screen off', ccSettings: 'TV settings', ccSound: 'Sound on', ccMuted: 'Muted', ccVolume: 'Volume ',
+      ccSleep: 'Sleep Timer', ccMin: ' min', ccScreenHint: 'Press any key to turn the screen back on',
       launchFail: 'Launch failed: ', needRoot: 'Homebrew Channel service not reachable (root required)',
       listFail: 'Could not load the app list'
     }
@@ -273,7 +279,64 @@
       var x = MARGIN_X + (i % COLS) * PITCH_X;
       var y = Math.floor(i / COLS) * PITCH_Y;
       it.el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
+      it.el.classList.toggle('dock', i < COLS);
     });
+  }
+
+  /* ------------------------------------------------------------- wallpaper */
+
+  /* Like the tvOS top shelf: the focused app's own artwork fills the background.
+   * art-sync.sh copies the images the apps ship into our folder (see there). */
+  var artMap = store.get('art', {});
+  var artTimer = null, artFlip = false, artShown = null, artSynced = false;
+
+  function syncArt() {
+    if (!Luna.available) { return; }
+    var entries = [];
+    items.forEach(function (it) {
+      var m = it.kind === 'app' && /^(\/.*\/applications\/[^/]+)\//.exec(it.icon || '');
+      if (m) { entries.push(Luna.shQuote(it.id + '|' + m[1])); }
+    });
+    if (!entries.length) { return; }
+    Luna.exec('sh ' + APP_DIR + '/art-sync.sh ' + APP_DIR + ' ' + entries.join(' '), 60000).then(function (r) {
+      var map = {};
+      (r.stdoutString || '').split('\n').forEach(function (line) {
+        var p = line.split('|');
+        if (p.length === 2 && p[1]) { map[p[0]] = p[1]; }
+      });
+      artMap = map;
+      store.set('art', map);
+      showArt();
+    }, function () {});
+  }
+
+  function showArt() {
+    clearTimeout(artTimer);
+    artTimer = setTimeout(function () {
+      var it = items[focus];
+      var file = it && it.kind === 'app' ? artMap[it.id] : null;
+      if (file === artShown) { return; }
+      var a = $('artA'), b = $('artB');
+      var next = artFlip ? a : b, prev = artFlip ? b : a;
+      if (!file) {
+        artShown = null;
+        a.classList.remove('on'); b.classList.remove('on');
+        stage.classList.remove('has-art');
+        return;
+      }
+      var img = new Image();
+      img.onload = function () {
+        if (!items[focus] || artMap[items[focus].id] !== file) { return; }   // focus moved on
+        artShown = file;
+        artFlip = !artFlip;
+        next.style.backgroundImage = 'url("art/' + file + '")';
+        next.classList.add('on');
+        prev.classList.remove('on');
+        stage.classList.add('has-art');
+      };
+      img.onerror = function () { delete artMap[it.id]; };
+      img.src = 'art/' + file;
+    }, 320);
   }
 
   function render(model) {
@@ -324,11 +387,12 @@
     var y;
     if (r === 0 && mode !== 'move') {
       y = SHELF_Y;
-      stage.classList.remove('scrolled');
+      stage.classList.remove('scrolled', 'deep');
     } else {
       var overflow = GRID_Y + r * PITCH_Y + TILE_H + 90 - 1080;
       y = GRID_Y - Math.max(0, overflow);
       stage.classList.add('scrolled');
+      stage.classList.toggle('deep', overflow > 0);
     }
     gridEl.style.transform = 'translate3d(0,' + y + 'px,0)';
   }
@@ -361,6 +425,7 @@
     tile.classList.add('focus');
     scrollGrid();
     setAmbient(items[i].color);
+    showArt();
   }
 
   function neighbour(dx, dy) {
@@ -554,6 +619,154 @@
       .catch(function () {});
   }
 
+  /* -------------------------------------------------------- control center */
+
+  var ICON = {
+    power: '<path d="M24 6v16"/><path d="M14.5 11.5a14 14 0 1 0 19 0"/>',
+    wifi: '<path d="M6 19a26 26 0 0 1 36 0"/><path d="M12 26a17 17 0 0 1 24 0"/><path d="M18 33a8.500 8.500 0 0 1 12 0"/><circle cx="24" cy="39" r="1.500"/>',
+    lan: '<rect x="18" y="6" width="12" height="10" rx="2"/><rect x="6" y="32" width="12" height="10" rx="2"/><rect x="30" y="32" width="12" height="10" rx="2"/><path d="M24 16v8M12 32v-8h24v8"/>',
+    screen: '<rect x="6" y="9" width="36" height="24" rx="4"/><path d="M17 41h14M24 33v8M14 15l20 12"/>',
+    sound: '<path d="M8 19h7l9-8v26l-9-8H8z"/><path d="M31 17a10 10 0 0 1 0 14M36 12a17 17 0 0 1 0 24"/>',
+    muted: '<path d="M8 19h7l9-8v26l-9-8H8z"/><path d="M32 19l10 10M42 19L32 29"/>',
+    sleep: '<circle cx="24" cy="26" r="15"/><path d="M24 17v9l6 4M19 6h10"/>',
+    sliders: '<path d="M6 14h20M34 14h8M6 34h8M22 34h20"/><circle cx="30" cy="14" r="4"/><circle cx="18" cy="34" r="4"/>'
+  };
+  function icon(name) {
+    return '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.200" stroke-linecap="round" stroke-linejoin="round">' + ICON[name] + '</svg>';
+  }
+
+  var SLEEP_STEPS = ['off', '30', '60', '90', '120'];
+  var ccState = { net: null, muted: null, volume: null, sleep: null };
+  var ccFocus = 0;
+  var screenOff = false;
+
+  function launchApp(id, params, overlay) {
+    closeCC();
+    // overlays (LG settings) draw on top of the launcher: keep it visible
+    if (!overlay) { stage.classList.add('launching'); }
+    var payload = { id: id };
+    if (params) { payload.params = params; }
+    Luna.smartCall('luna://com.webos.applicationManager/launch', payload).catch(function (e) {
+      stage.classList.remove('launching');
+      toast(T.launchFail + (e && e.message || id));
+    });
+    setTimeout(function () { if (!document.hidden) { stage.classList.remove('launching'); } }, 6000);
+  }
+
+  /* One always-visible row of glass buttons next to the clock (no open/closed states). */
+  var ccItems = [
+    { id: 'net',
+      icon: function () { return ccState.net && ccState.net.type === 'lan' ? 'lan' : 'wifi'; },
+      label: function () {
+        if (!ccState.net) { return T.ccNet; }
+        if (!ccState.net.type) { return T.ccOffline; }
+        return (ccState.net.type === 'lan' ? T.ccLan : T.ccWifi) + (ccState.net.name ? ' · ' + ccState.net.name : '');
+      },
+      off: function () { return !!(ccState.net && !ccState.net.type); },
+      run: function () { launchApp('com.palm.app.settings', { target: 'network' }, true); } },
+    { id: 'sound',
+      icon: function () { return ccState.muted ? 'muted' : 'sound'; },
+      label: function () {
+        return ccState.muted ? T.ccMuted : T.ccSound + (ccState.volume === null ? '' : ' · ' + T.ccVolume + ccState.volume);
+      },
+      off: function () { return !!ccState.muted; },
+      run: function () {
+        var target = !ccState.muted;
+        Luna.smartCall('luna://com.webos.service.apiadapter/audio/setMute', { mute: target })
+          .catch(function () { return Luna.smartCall('luna://com.webos.audio/setMuted', { muted: target }); })
+          .then(function () { ccState.muted = target; renderCC(); }, ccFail);
+      } },
+    { id: 'sleep', icon: function () { return 'sleep'; },
+      label: function () {
+        return T.ccSleep + ' · ' + (!ccState.sleep || ccState.sleep === 'off' ? T.off : ccState.sleep + T.ccMin);
+      },
+      on: function () { return !!ccState.sleep && ccState.sleep !== 'off'; },
+      run: function () {
+        var i = SLEEP_STEPS.indexOf(ccState.sleep);
+        var next = SLEEP_STEPS[(i + 1) % SLEEP_STEPS.length];
+        Luna.smartCall('luna://com.webos.settingsservice/setSystemSettings', { category: 'time', settings: { sleepTimer: next } })
+          .then(function () { ccState.sleep = next; renderCC(); }, ccFail);
+      } },
+    { id: 'screen', icon: function () { return 'screen'; }, label: function () { return T.ccScreen; },
+      run: function () {
+        closeCC();
+        // wait for the OK key to be released: any key event turns the screen back on
+        setTimeout(function () {
+          Luna.smartCall('luna://com.webos.service.tvpower/power/turnOffScreen', {}).then(function () { screenOff = true; }, ccFail);
+        }, 700);
+      } },
+    { id: 'tvsettings', icon: function () { return 'sliders'; }, label: function () { return T.ccSettings; },
+      run: function () { launchApp('com.palm.app.settings', null, true); } },
+    { id: 'power', icon: function () { return 'power'; }, label: function () { return T.ccPower; },
+      run: function () {
+        closeCC();
+        Luna.smartCall('luna://com.webos.service.tvpower/power/powerOff', { reason: 'remoteKey' }).catch(ccFail);
+      } }
+  ];
+
+  function ccFail(e) { toast((e && e.message) || T.needRoot); }
+
+  function renderCC() {
+    var bar = $('ccBar');
+    bar.innerHTML = '';
+    ccItems.forEach(function (it, i) {
+      var el = document.createElement('div');
+      var focused = mode === 'cc' && i === ccFocus;
+      el.className = 'cc' + (focused ? ' focus' : '') + (it.on && it.on() ? ' on' : '') + (it.off && it.off() ? ' off' : '');
+      el._cc = i;
+      el.innerHTML = '<span class="ic">' + icon(it.icon()) + '</span>';
+      var lab = document.createElement('span');
+      lab.className = 'cc-label';
+      lab.textContent = it.label();
+      el.appendChild(lab);
+      bar.appendChild(el);
+    });
+  }
+
+  function loadCCState() {
+    if (!Luna.available) { return; }
+    Luna.smartCall('luna://com.webos.service.connectionmanager/getStatus', {}).then(function (r) {
+      var wired = r.wired || {}, wifi = r.wifi || {};
+      ccState.net = wired.state === 'connected' ? { type: 'lan', name: wired.ipAddress || '' }
+        : wifi.state === 'connected' ? { type: 'wifi', name: wifi.displayName || wifi.ssid || '' }
+        : { type: null };
+      renderCC();
+    }, function () {});
+    Luna.smartCall('luna://com.webos.service.apiadapter/audio/getStatus', {}).then(function (r) {
+      ccState.muted = !!r.mute;
+      ccState.volume = r.volume;
+      renderCC();
+    }, function () {});
+    Luna.smartCall('luna://com.webos.settingsservice/getSystemSettings', { category: 'time', keys: ['sleepTimer'] }).then(function (r) {
+      ccState.sleep = r.settings.sleepTimer;
+      renderCC();
+    }, function () {});
+  }
+
+  /* "Up" from the dock moves the focus into the bar; "down" or Back returns. */
+  function openCC(index) {
+    if (mode !== 'home') { return; }
+    mode = 'cc';
+    ccFocus = index === undefined ? 0 : index;
+    if (items[focus]) { items[focus].el.classList.remove('focus'); }
+    stage.classList.add('cc-open');
+    renderCC();
+    loadCCState();
+  }
+
+  function closeCC() {
+    if (mode !== 'cc') { return; }
+    mode = 'home';
+    stage.classList.remove('cc-open');
+    if (items[focus]) { items[focus].el.classList.add('focus'); }
+    renderCC();
+  }
+
+  function ccMove(dx, dy) {
+    if (dy > 0) { closeCC(); return; }
+    if (dx) { ccFocus = Math.max(0, Math.min(ccItems.length - 1, ccFocus + dx)); renderCC(); }
+  }
+
   /* ----------------------------------------------------------------- input */
 
   var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 461, ESC: 27, BKSP: 8 };
@@ -567,6 +780,23 @@
     var k = e.keyCode;
     var isBack = k === KEY.BACK || k === KEY.ESC || k === KEY.BKSP;
     var dir = arrows(k);
+
+    // "Screen off" from the control center: the first key only wakes the screen
+    if (screenOff) {
+      screenOff = false;
+      Luna.smartCall('luna://com.webos.service.tvpower/power/turnOnScreen', {}).catch(function () {});
+      e.preventDefault();
+      return;
+    }
+
+    if (mode === 'cc') {
+      if (dir) { ccMove(dir[0], dir[1]); }
+      else if (k === KEY.OK) { if (!e.repeat) { ccItems[ccFocus].run(); } }
+      else if (isBack) { closeCC(); }
+      else { return; }
+      e.preventDefault();
+      return;
+    }
 
     if (mode === 'settings') {
       if (k === KEY.UP) { optIndex = Math.max(0, optIndex - 1); renderSettings(); }
@@ -587,7 +817,8 @@
       return;
     }
 
-    if (dir) { move(dir[0], dir[1]); }
+    if (dir && dir[1] < 0 && focus < COLS) { openCC(); }   // up from the dock
+    else if (dir) { move(dir[0], dir[1]); }
     else if (k === KEY.OK) {
       // short press launches (on key-up), holding the key picks the tile up
       if (!okDown) {
@@ -618,6 +849,15 @@
 
   // Magic Remote pointer: hover focuses, the focused tile tilts towards the cursor
   document.addEventListener('mousemove', function (e) {
+    if (mode === 'cc') {
+      var c = e.target;
+      while (c && c !== document && c._cc === undefined) { c = c.parentNode; }
+      if (c && c._cc !== undefined && c._cc !== ccFocus) { ccFocus = c._cc; renderCC(); }
+      return;
+    }
+    var cb = e.target;
+    while (cb && cb !== document && cb._cc === undefined) { cb = cb.parentNode; }
+    if (mode === 'home' && cb && cb._cc !== undefined) { openCC(cb._cc); return; }
     if (mode !== 'home') { return; }
     var tile = tileOf(e.target);
     if (!tile) { return; }
@@ -656,6 +896,14 @@
 
   document.addEventListener('click', function (e) {
     if (longPressed) { longPressed = false; return; }
+    var n = e.target;
+    while (n && n !== document && n._cc === undefined && n.id !== 'top') { n = n.parentNode; }
+    if (mode === 'cc') {
+      if (n && n._cc !== undefined) { ccFocus = n._cc; renderCC(); ccItems[ccFocus].run(); }
+      else { closeCC(); }
+      return;
+    }
+    if (mode === 'home' && n && n._cc !== undefined) { openCC(n._cc); ccItems[ccFocus].run(); return; }
     if (mode === 'settings') {
       var t = e.target;
       while (t && t !== document && t._opt === undefined) { t = t.parentNode; }
@@ -686,9 +934,14 @@
     return loadData().then(function (data) {
       store.set('data', data);
       var sig = JSON.stringify(data) + '|' + prefs.showSystem;
-      if (sig === dataSig) { return; }
+      if (sig === dataSig) {
+        if (!artSynced) { artSynced = true; syncArt(); }
+        return;
+      }
       dataSig = sig;
       render(buildModel(data));
+      artSynced = true;
+      syncArt();
     }, function () {
       if (!items.length) { render(buildModel({ points: [], inputs: defaultInputs() })); }
       toast(T.listFail);
@@ -712,13 +965,14 @@
   }
 
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) { enter(); tick(); refresh(); }
+    if (!document.hidden) { enter(); tick(); refresh(); loadCCState(); }
   });
   document.addEventListener('webOSRelaunch', function () {
     // Home button while the launcher is already showing: back to the first tile
     var wasVisible = !document.hidden;
     if (mode === 'settings') { closeSettings(); }
     if (mode === 'move') { endMove(); }
+    if (mode === 'cc') { closeCC(); }
     try { if (window.PalmSystem && PalmSystem.activate) { PalmSystem.activate(); } } catch (e) {}
     if (wasVisible) { setFocus(0); } else { enter(); }
     refresh();
@@ -727,6 +981,8 @@
 
   fit();
   tick();
+  renderCC();
+  loadCCState();
   setInterval(tick, 10000);
 
   // paint instantly from the last known list, then update from the TV
